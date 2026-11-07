@@ -1,0 +1,75 @@
+# N.O.V.A. settings. Restart NOVA after changing this file.
+
+[wake]
+# Wake phrase is "Hey Nova". Seconds to wait for your question after "Hey Nova" + a pause.
+wait_for_command = 6.0
+# Seconds of quiet that end your question once you've started talking.
+end_silence = 1.0
+# Seconds of audio kept from before the wake word (so "Hey Nova, ..." in one breath works).
+preroll = 3.0
+# Longest a single question can be.
+max_record = 15.0
+
+[conversation]
+# After "Hey Nova", keep talking without the wake word, like a voice chat.
+enabled = true
+# Seconds of silence after NOVA finishes speaking before the conversation ends.
+follow_up_timeout = 10.0
+# Talk over NOVA to interrupt it. Uses echo cancellation so it doesn't hear itself on speakers.
+talk_over = true
+echo_cancellation = true
+noise_suppression = true
+
+[mic]
+# Part of the microphone's name (see: .venv\Scripts\python.exe tools\mic_test.py --list).
+# Empty = Windows default input device.
+device = ""
+
+[speech_to_text]
+# large-v3-turbo: by far the most accurate here (needs the GPU). small.en / base.en: faster, less accurate.
+model = "large-v3-turbo"
+compute_type = "int8_float16"   # GPU weights: int8_float16 (half the video memory, same accuracy) or float16
+# Small model for the split-second "was that you or NOVA's echo?" check when you talk over NOVA.
+check_model = "base.en"
+device = "cuda"            # "cuda" (GPU) or "cpu"; falls back to cpu if CUDA fails
+# Words Whisper should expect: app names, people, places. "Claude" needs to be here.
+vocabulary = ["Claude", "Spotify", "Zen Browser", "File Pilot", "Mum", "Magdaong"]
+
+[claude]
+model = "haiku"
+path = ""                  # empty = find claude.exe automatically
+conversation_timeout = 300 # seconds idle before starting a fresh conversation
+location = ""              # e.g. "Auckland, New Zealand" (used once web search arrives)
+
+[voice]
+# Pick a voice from the tray icon (right-click > Voice); your choice is remembered in state.json.
+# This is the starting voice: "kokoro:<voice>" runs on your PC, "edge:<voice>" is Microsoft's online voice.
+name = "kokoro:af_bella"
+rate = "+5%"          # edge voices
+kokoro_speed = 1.05   # Kokoro voices
+# Voices listed in the tray menu: [id, label]. Kokoro voice ids: af_*/am_* (US), bf_*/bm_* (UK).
+menu = [
+    ["kokoro:af_bella", "Bella (Kokoro, US)"],
+    ["kokoro:af_heart", "Heart (Kokoro, US)"],
+    ["kokoro:af_sarah", "Sarah (Kokoro, US)"],
+    ["kokoro:af_nicole", "Nicole (Kokoro, US, soft)"],
+    ["kokoro:bf_emma", "Emma (Kokoro, UK)"],
+    ["kokoro:am_michael", "Michael (Kokoro, US)"],
+    ["kokoro:am_fenrir", "Fenrir (Kokoro, US)"],
+    ["kokoro:bm_george", "George (Kokoro, UK)"],
+    ["edge:en-US-AvaMultilingualNeural", "Ava (Microsoft, online)"],
+    ["edge:en-US-AndrewMultilingualNeural", "Andrew (Microsoft, online)"],
+]
+
+# How NOVA should SAY a word, spelled the way it sounds. Text on screen keeps the real spelling.
+# (Kokoro said "Magdaong" as MAG-day-ahng; "Mugduh-ong" also avoids UK voices saying "mug-dar-ong".)
+[voice.pronunciations]
+Magdaong = "Mugduh-ong"
+
+[ui]
+# Colour of the notch's progress bar, level bars and caret. Empty = your Windows accent colour.
+accent = ""
+# Show your words on the notch as you speak (rough at first; Whisper's text replaces it when you stop).
+live_captions = true
+# Show the notch at the bottom of the screen. Toggle from the tray (right-click > Show notch); that choice is remembered.
+notch = true

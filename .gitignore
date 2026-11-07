@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Downloaded by setup.ps1 (Vosk and Kokoro models)
+models/
+
+# Local data: logs, recordings and test audio, tray choices
+logs/
+samples/
+tools/clips/
+state.json

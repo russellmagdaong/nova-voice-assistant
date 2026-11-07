@@ -1,0 +1,4 @@
+# NVIDIA GPU: Kokoro + Whisper on CUDA 12. setup.ps1 installs this when nvidia-smi is found.
+# onnxruntime-gpu 1.26 is the newest CUDA 12 build (1.27+ need CUDA 13); Whisper's CTranslate2 needs CUDA 12.
+# Replaces the CPU onnxruntime (they can't both be installed). ~1.9 GB download (cuBLAS, cuDNN, ...).
+onnxruntime-gpu[cuda,cudnn]==1.26.0
