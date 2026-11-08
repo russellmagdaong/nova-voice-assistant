@@ -67,6 +67,8 @@ menu = [
 Magdaong = "Mugduh-ong"
 
 [ui]
+# Starting mascot: "cat", "robot" or "orb" (the tray's Mascot menu overrides it; remembered in state.json).
+mascot = "cat"
 # Colour of the notch's progress bar, level bars and caret. Empty = your Windows accent colour.
 accent = ""
 # Show your words on the notch as you speak (rough at first; Whisper's text replaces it when you stop).

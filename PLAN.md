@@ -65,9 +65,9 @@ mic ─► wake word (Vosk, offline) ─► record question ─► Whisper ─�
 
 ### Notch UI
 - Placement: bottom centre of the screen (the taskbar is at the top, so there's no conflict).
-- Collapsed: the mascot peeking up from the bottom edge (ears and eyes).
-- Expands on mouse hover, or when NOVA is activated by voice: the mascot pops up and a Windows 11 style card (teaching-tip look, no gradients) shows Listening / Thinking / answer text, active timers and upcoming reminders.
-- **Mascot:** a pixel-art black cat (`nova/pixelcat.py`, drawn as text grids, scaled up in whole pixels). Replaced the orb on 2026-11-08 at the user's request; a smooth Codex-generated cat was tried first, then the user asked for pixel art like a pixel game.
+- Collapsed: the mascot peeking up from the bottom edge (ears and eyes), or the orb's thin pill.
+- Expands on mouse hover, or when NOVA is activated by voice: the mascot pops up and a Windows 11 style card (acrylic blur in its own window, no gradients) shows Listening / Thinking / answer text, active timers and upcoming reminders.
+- **Mascot** (tray > Mascot): pixel-art black cat (`nova/pixelcat.py`), pixel robot (`nova/pixelbot.py`), both drawn as text grids and scaled up in whole pixels; or the orb (`nova/orb.py`, a wireframe sphere in the classic pill notch). The cat replaced the orb on 2026-11-08; a smooth Codex-generated cat was tried first, then the user asked for pixel art; the robot and the orb were added as options the same day. Pixel mascot behaviour:
   - idle: peeks, blinks, glances left/right
   - listening: ears perked, wide eyes, hops with your voice
   - thinking: looks up; progress bar moves on the card
@@ -94,7 +94,7 @@ Each phase works on its own before the next one starts.
 ## Resolved
 
 - Notch at the bottom centre; taskbar is at the top.
-- The notch is a pixel-art black cat with a Windows-style card (was an animated orb).
+- The notch's look is switchable (tray > Mascot): pixel-art black cat, pixel robot (both peek up from the edge, with a Windows-style acrylic card above), or the orb notch (pill that opens into a panel with a wireframe orb). Added 2026-11-08 at the user's request.
 - Wake phrase is "Hey Nova" only (no plain "Nova").
 
 ## Open questions

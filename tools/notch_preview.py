@@ -1,11 +1,14 @@
-"""Render the notch in each state to one image (for checking the design without talking to it).
-Left column: your Windows theme; right column: the other one (light/dark). Also writes every
-frame of the pixel cat to samples\\cat_frames.png.
+"""Render the notch in each state, for each mascot, without talking to it.
 
-    .venv\\Scripts\\python.exe tools\\notch_preview.py [out.png]
+    .venv\\Scripts\\python.exe tools\\notch_preview.py
+
+Writes samples\\notch_preview_<mascot>.png (left column: your Windows theme, right: the other one)
+and samples\\mascot_frames.png (every frame of the pixel mascots). The card is drawn translucent
+here; on screen Windows also blurs what's behind it.
 """
 from __future__ import annotations
 
+import math
 import sys
 import time
 from pathlib import Path
@@ -17,12 +20,11 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from nova import pixelcat, ui  # noqa: E402
+from nova import pixelbot, pixelcat, ui  # noqa: E402
 
 Q = "What's the weather going to be like in Auckland tomorrow afternoon?"
 SCENES = [
     ("idle", ui.IDLE, dict()),
-    ("idle, glancing", ui.IDLE, dict(frame="look_left")),
     ("hover", ui.IDLE, dict(hover=True)),
     ("live caption while you talk", ui.LISTENING,
      dict(live="What's the weather going to be like in Auckland tomorrow after", mic=0.35)),
@@ -36,13 +38,15 @@ SCENES = [
     ("muted", ui.MUTED, dict()),
     ("error", ui.ERROR, dict(answer="Couldn't reach Claude. Try again in a moment.")),
 ]
-TASKBAR = 48
+CELL_W, CELL_H, EDGE = 400, 250, 24      # EDGE: a strip under the screen edge
 
 
 def render(n: ui.Notch, qp: QPainter, x0: int, y0: int, title: str, state: str, o: dict, light: bool):
     n.theme = ui.Theme(light, None)
+    if n.sprite:
+        n.sprite.rim = not light
     n.state, n.state_t = state, time.monotonic() - 5
-    n.hovered = o.get("hover", False)
+    n.hover_main, n.hover_card, n.hover_until = o.get("hover", False), False, 0.0
     n.you.clear(); n.answer.clear(); n.live = False; n.countdown = o.get("countdown", -1.0)
     if "live" in o:
         n.you.set(o["live"], animate=False); n.live = True
@@ -55,58 +59,73 @@ def render(n: ui.Notch, qp: QPainter, x0: int, y0: int, title: str, state: str, 
     n.bars = [min(1.0, level * 2.2 * f) for f in (0.7, 1.0, 0.55, 0.85)]
     n.p = 1.0 if n._want_card() else 0.0
     n.pv = 0.0
-    n.peek, n.peek_v = n._peek_target(), 0.0
+    if n.sprite:
+        n.peek, n.peek_v = n._peek_target(), 0.0
+        n.sprite.cur = o.get("frame") or n.sprite._pick(state, n.hovered, 0.0)
     n.h, n.cw = n._content_height(), n._content_width()
-    n.cat.rim = not light
-    n.cat.cur = o.get("frame") or n.cat._pick(state, n.hovered, 0.0)
     n.t0 = time.monotonic() - o.get("t", 0.0) * 1.6
-    # A plain desktop with the taskbar under the notch.
-    desk = QColor("#dfe6ee") if light else QColor("#1f2a36")
-    qp.fillRect(QRectF(x0, y0, n.W, n.H), desk)
-    qp.fillRect(QRectF(x0, y0 + n.H, n.W, TASKBAR), QColor("#eeeeee") if light else QColor("#1c1c1c"))
-    n.render(qp, QPoint(x0, y0), renderFlags=n.RenderFlag.DrawChildren)
+    # A plain desktop, the notch's window on its bottom edge, and the card's window above it.
+    qp.fillRect(QRectF(x0, y0, CELL_W, CELL_H), QColor("#dfe6ee") if light else QColor("#1f2a36"))
+    qp.fillRect(QRectF(x0, y0 + CELL_H - EDGE, CELL_W, EDGE), QColor("#eeeeee") if light else QColor("#1c1c1c"))
+    mx, my = x0 + (CELL_W - n.W) // 2, y0 + CELL_H - EDGE - n.H
+    n.render(qp, QPoint(mx, my), renderFlags=n.RenderFlag.DrawChildren)
+    if n.p > 0.01:
+        r = n._panel_rect() if n.orb_mode else n._card_rect()
+        card = QImage(math.ceil(r.width()), math.ceil(r.height()), QImage.Format_ARGB32_Premultiplied)
+        card.fill(Qt.transparent)
+        cp = QPainter(card)
+        cp.setRenderHint(QPainter.Antialiasing)
+        cp.setRenderHint(QPainter.TextAntialiasing)
+        n.paint_card(cp, QRectF(0, 0, card.width(), card.height()), blur=False)
+        cp.end()
+        qp.drawImage(QPointF(mx + r.x(), my + r.y()), card)
     qp.setPen(QColor(0, 0, 0, 160) if light else QColor(255, 255, 255, 170))
-    qp.drawText(QRectF(x0 + 10, y0 + 6, n.W, 16), Qt.AlignLeft, title)
+    qp.drawText(QRectF(x0 + 10, y0 + 6, CELL_W, 16), Qt.AlignLeft, title)
 
 
-def frame_sheet(path: Path, scale: int = 8):
-    """Every frame of the pixel cat, big, on dark (with its outline) and light backgrounds."""
-    names = list(pixelcat.FRAMES)
-    cw, ch = pixelcat.COLS * scale + 16, pixelcat.ROWS * scale + 28
-    img = QImage(cw * len(names), ch * 2, QImage.Format_ARGB32_Premultiplied)
+def frame_sheet(path: Path, scale: int = 6):
+    """Every frame of each pixel mascot, big, on dark (with its outline) and light backgrounds."""
+    arts = [pixelcat, pixelbot]
+    cw = max(a.COLS for a in arts) * scale + 12
+    ch = max(a.ROWS for a in arts) * scale + 24
+    n = max(len(a.FRAMES) for a in arts)
+    img = QImage(cw * n, ch * 2 * len(arts), QImage.Format_ARGB32_Premultiplied)
     qp = QPainter(img)
-    for row, (bg, rim) in enumerate([("#1f2a36", True), ("#dfe6ee", False)]):
-        qp.fillRect(QRectF(0, row * ch, img.width(), ch), QColor(bg))
-        for i, name in enumerate(names):
-            art = pixelcat.image(name, rim)
-            qp.drawImage(QPointF(i * cw + 8, row * ch + 4),
-                         art.scaled(art.width() * scale, art.height() * scale, Qt.IgnoreAspectRatio,
-                                    Qt.FastTransformation))
-            qp.setPen(QColor("#999999"))
-            qp.drawText(QPointF(i * cw + 8, row * ch + ch - 8), name)
+    for ai, art in enumerate(arts):
+        for row, (bg, rim) in enumerate([("#1f2a36", True), ("#dfe6ee", False)]):
+            y = (ai * 2 + row) * ch
+            qp.fillRect(QRectF(0, y, img.width(), ch), QColor(bg))
+            for i, name in enumerate(art.FRAMES):
+                a = art.image(name, rim)
+                qp.drawImage(QPointF(i * cw + 6, y + 4),
+                             a.scaled(a.width() * scale, a.height() * scale, Qt.IgnoreAspectRatio,
+                                      Qt.FastTransformation))
+                qp.setPen(QColor("#999999"))
+                qp.drawText(QPointF(i * cw + 6, y + ch - 6), name)
     qp.end()
     img.save(str(path))
 
 
 def main():
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "samples" / "notch_preview.png"
+    out_dir = ROOT / "samples"
+    out_dir.mkdir(exist_ok=True)
     app = QApplication(sys.argv)  # noqa: F841
-    bridge = ui.Bridge()
-    n = ui.Notch(bridge, lambda: (0.0, 0.0))
+    frame_sheet(out_dir / "mascot_frames.png")
+    n = ui.Notch(ui.Bridge(), lambda: (0.0, 0.0))
     n.tick.stop()
-    frame_sheet(out.parent / "cat_frames.png")
     mine = n.theme.light
-    cell_h = n.H + TASKBAR + 6
-    img = QImage(n.W * 2 + 6, cell_h * len(SCENES), QImage.Format_ARGB32_Premultiplied)
-    img.fill(QColor("#888888"))
-    qp = QPainter(img)
-    for i, (title, state, o) in enumerate(SCENES):
-        render(n, qp, 0, i * cell_h, title, state, o, mine)
-        render(n, qp, n.W + 6, i * cell_h, title, state, o, not mine)
-    qp.end()
-    out.parent.mkdir(exist_ok=True)
-    img.save(str(out))
-    print(out)
+    for mascot in ui.MASCOTS:
+        n.set_mascot(mascot)
+        img = QImage(CELL_W * 2 + 6, (CELL_H + 6) * len(SCENES), QImage.Format_ARGB32_Premultiplied)
+        img.fill(QColor("#888888"))
+        qp = QPainter(img)
+        for i, (title, state, o) in enumerate(SCENES):
+            render(n, qp, 0, i * (CELL_H + 6), title, state, o, mine)
+            render(n, qp, CELL_W + 6, i * (CELL_H + 6), title, state, o, not mine)
+        qp.end()
+        path = out_dir / f"notch_preview_{mascot}.png"
+        img.save(str(path))
+        print(path)
 
 
 if __name__ == "__main__":

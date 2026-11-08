@@ -45,9 +45,10 @@ def main():
         cfg["voice"]["name"] = remembered["voice"]
     bridge = ui.Bridge()
     assistant = Assistant(cfg, bridge)
-    notch = ui.Notch(bridge, assistant.levels, cfg["ui"]["accent"])
+    mascot = remembered.get("mascot", cfg["ui"]["mascot"])
+    notch = ui.Notch(bridge, assistant.levels, cfg["ui"]["accent"], mascot)
     notch_shown = remembered.get("notch", cfg["ui"]["notch"])
-    tray = ui.Tray(bridge, cfg["voice"]["menu"], cfg["voice"]["name"], notch_shown)
+    tray = ui.Tray(bridge, cfg["voice"]["menu"], cfg["voice"]["name"], notch_shown, mascot)
     notch.menu = tray.menu
     notch.set_shown(notch_shown)
     tray.show()
@@ -57,7 +58,14 @@ def main():
         state.save(notch=on)
         log.info("notch %s", "shown" if on else "hidden")
 
+    def select_mascot(name: str):
+        notch.set_mascot(name)
+        tray.set_mascot(name)
+        state.save(mascot=name)
+        log.info("mascot: %s", name)
+
     bridge.notch_toggled.connect(toggle_notch)
+    bridge.mascot_selected.connect(select_mascot)
 
     def quit_app():
         assistant.quit()

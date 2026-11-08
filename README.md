@@ -1,6 +1,6 @@
 # N.O.V.A. — Not Only a Voice Assistant
 
-Say **"Hey Nova"** and ask anything. NOVA answers out loud using Claude (through your signed-in Claude Code CLI, no API key). It lives at the bottom centre of your screen as a pixel-art black cat peeking up from the edge, and in the tray.
+Say **"Hey Nova"** and ask anything. NOVA answers out loud using Claude (through your signed-in Claude Code CLI, no API key). It lives at the bottom centre of your screen (a pixel-art cat or robot peeking up from the edge, or a glowing orb notch) and in the tray.
 
 ## Run it
 
@@ -25,20 +25,26 @@ First time on a new machine: `powershell -ExecutionPolicy Bypass -File setup.ps1
 
 ## The notch
 
-A pixel-art black cat peeks up from the bottom edge of the screen, in the centre (just its ears and eyes). It blinks and glances around while it waits. Say "Hey Nova" (or hover over it) and it pops up with a Windows-style card above it:
+Pick its look from the tray: right-click > **Mascot** (remembered):
 
-- **The cat**: perks its ears up and hops while you talk, looks up while thinking, moves its mouth with NOVA's voice, sleeps (with drifting z's) while muted, and looks sad when something goes wrong.
-- **Status** (Listening / Thinking / Your turn) with a small level meter. A thin bar along the bottom of the card moves while NOVA thinks, and runs down while it waits for your reply.
+- **Black cat** and **Robot** (pixel art): peek up from the bottom edge of the screen, in the centre (just ears and eyes, or antennae and the top of the robot's screen). They blink and glance around while they wait. Say "Hey Nova" (or hover) and they pop up with a card above them: ears perk up / bigger eyes while you talk (and a hop with your voice), looking up while thinking, a moving mouth with NOVA's voice, asleep with small drifting z's while muted (the robot's screen dims), sad when something goes wrong.
+- **Orb**: the classic notch, a thin glowing pill that opens into a panel with an animated wireframe orb beside the text. The orb wobbles with your voice and NOVA's, spins faster while thinking, turns grey when muted and red on an error.
+
+The card:
+
+- **Status** (Listening / Thinking / Your turn) with a small level meter. A thin bar along the bottom moves while NOVA thinks, and runs down while it waits for your reply.
 - **Text**: your words live while you talk; then your question in small print above NOVA's answer, which grows with the reply.
-- The card follows Windows: light or dark mode, in your Windows accent colour. On dark themes the cat gets a faint outline so it doesn't disappear.
+- **See-through**: Windows blurs what's behind it (acrylic, like Start and the flyouts). It follows light/dark mode and your Windows accent colour. On dark themes the black cat gets a faint outline so it doesn't disappear.
 - Left-click: stop NOVA talking (or end the conversation if it's listening). Right-click: the tray menu.
-- The cat is drawn as text in `nova\pixelcat.py` (one character per pixel), so it's easy to edit. Preview every state without talking: `.venv\Scripts\python.exe tools\notch_preview.py` (writes `samples\notch_preview.png` and `samples\cat_frames.png`).
+
+The pixel mascots are drawn as text in `nova\pixelcat.py` and `nova\pixelbot.py` (one character per pixel), so they're easy to edit; the orb is `nova\orb.py`. Preview every state without talking: `.venv\Scripts\python.exe tools\notch_preview.py` (writes `samples\notch_preview_cat.png` / `_robot` / `_orb` and `samples\mascot_frames.png`).
 
 ## Tray icon
 
+- The icon is your mascot (the cat's or robot's head with a white outline so it stands out on the taskbar, or the orb); grey and asleep when muted.
 - Left click: mute or unmute the wake word. **Muting also frees NOVA's video memory** (~1.7 GB down to ~0.1 GB; the last 0.1 GB stays until you quit). RAM is freed too (NOVA uses ~0.2-0.3 GB while running). After unmuting NOVA is ready in ~1-3 s, using its smaller speech model for the ~9 s it takes the accurate one to reload.
 - **Show notch** (right-click menu) hides or shows the notch; your choice is remembered. NOVA still listens and chimes with it hidden.
-- Right click: Mute wake word, New conversation, **Voice**, Quit NOVA.
+- Right click: Mute wake word, New conversation, Show notch, **Mascot**, **Voice**, Quit NOVA.
 
 ### Voices
 
@@ -68,6 +74,7 @@ Edit `config.toml`, then restart NOVA. Main ones:
 | `[voice] name` | Starting voice, e.g. `kokoro:af_bella` or `edge:en-US-AvaMultilingualNeural` (the tray choice overrides it) |
 | `[voice] kokoro_speed` | Speaking speed for Kokoro voices (default 1.05) |
 | `[voice.pronunciations]` | How to say a word, spelled the way it sounds (e.g. `Magdaong = "Mugduh-ong"`). Only the voice changes; the text keeps the real spelling |
+| `[ui] mascot` | Starting look: `cat`, `robot` or `orb` (the tray's Mascot menu overrides it) |
 | `[ui] accent` | Colour for the notch's bars and caret; empty = your Windows accent colour |
 | `[ui] notch` | Show the notch (default true; the tray's Show notch overrides it) |
 | `[ui] live_captions` | Show your words on the notch as you speak (default true) |

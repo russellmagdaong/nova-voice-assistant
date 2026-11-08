@@ -29,7 +29,7 @@ DEFAULTS = {
         ["edge:en-US-AvaMultilingualNeural", "Ava (Microsoft, online)"],
         ["edge:en-US-AndrewMultilingualNeural", "Andrew (Microsoft, online)"],
     ], "pronunciations": {}},
-    "ui": {"accent": "", "live_captions": True, "notch": True},
+    "ui": {"mascot": "cat", "accent": "", "live_captions": True, "notch": True},
 }
 
 
