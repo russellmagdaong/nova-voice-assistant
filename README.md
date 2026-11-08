@@ -34,7 +34,7 @@ The card:
 
 - **Status** (Listening / Thinking / Your turn) with a small level meter. A thin bar along the bottom moves while NOVA thinks, and runs down while it waits for your reply.
 - **Text**: your words live while you talk; then your question in small print above NOVA's answer, which grows with the reply.
-- **See-through**: Windows blurs what's behind it (acrylic, like Start and the flyouts). It follows light/dark mode and your Windows accent colour. On dark themes the black cat gets a faint outline so it doesn't disappear.
+- **See-through**: in dark mode it's black glass (translucent black, no blur, so what's behind shows through darkened); in light mode Windows blurs what's behind it (acrylic, like Start and the flyouts). It follows your Windows accent colour. On dark themes the black cat gets a faint outline so it doesn't disappear.
 - Left-click: stop NOVA talking (or end the conversation if it's listening). Right-click: the tray menu.
 
 The pixel mascots are drawn as text in `nova\pixelcat.py` and `nova\pixelbot.py` (one character per pixel), so they're easy to edit; the orb is `nova\orb.py`. Preview every state without talking: `.venv\Scripts\python.exe tools\notch_preview.py` (writes `samples\notch_preview_cat.png` / `_robot` / `_orb` and `samples\mascot_frames.png`).

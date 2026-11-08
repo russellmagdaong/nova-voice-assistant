@@ -66,7 +66,7 @@ mic ─► wake word (Vosk, offline) ─► record question ─► Whisper ─�
 ### Notch UI
 - Placement: bottom centre of the screen (the taskbar is at the top, so there's no conflict).
 - Collapsed: the mascot peeking up from the bottom edge (ears and eyes), or the orb's thin pill.
-- Expands on mouse hover, or when NOVA is activated by voice: the mascot pops up and a Windows 11 style card (acrylic blur in its own window, no gradients) shows Listening / Thinking / answer text, active timers and upcoming reminders.
+- Expands on mouse hover, or when NOVA is activated by voice: the mascot pops up and a Windows 11 style card in its own window, no gradients (dark mode: black glass, translucent black without blur, the user's choice, because acrylic turns a black tint solid; light mode: acrylic blur) shows Listening / Thinking / answer text, active timers and upcoming reminders.
 - **Mascot** (tray > Mascot): pixel-art black cat (`nova/pixelcat.py`), pixel robot (`nova/pixelbot.py`), both drawn as text grids and scaled up in whole pixels; or the orb (`nova/orb.py`, a wireframe sphere in the classic pill notch). The cat replaced the orb on 2026-11-08; a smooth Codex-generated cat was tried first, then the user asked for pixel art; the robot and the orb were added as options the same day. Pixel mascot behaviour:
   - idle: peeks, blinks, glances left/right
   - listening: ears perked, wide eyes, hops with your voice

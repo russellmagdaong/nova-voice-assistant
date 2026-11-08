@@ -5,8 +5,9 @@ The notch has three looks (tray > Mascot; remembered):
   (pixelcat.py / pixelbot.py), with a card above it for what you say and what NOVA answers.
 - "orb": the classic notch, a thin pill that opens into a panel with an animated wireframe orb
   (orb.py) beside the text.
-The card is its own small window so Windows can blur what's behind it (acrylic, like Start and
-the flyouts); where that isn't available it's simply translucent.
+The card is its own small window. In dark mode it's black glass (translucent black, no blur);
+in light mode Windows blurs what's behind it (acrylic, like Start and the flyouts), or where that
+isn't available it's simply translucent.
 
 The worker thread talks to the UI only through Bridge signals (Qt queues them across threads).
 """
@@ -109,19 +110,22 @@ class Theme:
             self.track = QColor(0, 0, 0, 36)
             self.critical, self.caution = QColor("#C42B1C"), QColor("#9D5D00")
         else:
-            self.tint = QColor(55, 55, 59, 40)               # over white: grey 96, still fine for white text
-            self.card_blur = QColor(24, 24, 26, 8)
-            self.card_plain = QColor(32, 32, 34, 165)
-            self.pill, self.stroke = QColor(20, 20, 24, 175), QColor(255, 255, 255, 30)
+            # Black glass, no blur (the user's choice): with acrylic, Windows pulls a black tint to
+            # solid black, so nothing would show through.
+            self.tint = None
+            self.card_plain = QColor(0, 0, 0, 165)
+            self.card_blur = self.card_plain
+            self.pill, self.stroke = QColor(0, 0, 0, 175), QColor(255, 255, 255, 30)
             self.text, self.text2, self.text3 = (QColor(255, 255, 255), QColor(255, 255, 255, 200),
                                                  QColor(255, 255, 255, 139))
             self.track = QColor(255, 255, 255, 46)
             self.critical, self.caution = QColor("#FF99A4"), QColor("#FCE100")
 
 
-def enable_acrylic(hwnd: int, tint: QColor) -> bool:
+def set_acrylic(hwnd: int, tint: QColor | None) -> bool:
     """Windows' acrylic (blur + tint behind the window, like Start and the flyouts) and rounded
-    corners. False if this Windows can't do it."""
+    corners; tint None switches the blur off. False if there's no blur (off, or this Windows
+    can't do it)."""
     try:
         from ctypes import wintypes
 
@@ -136,13 +140,16 @@ def enable_acrylic(hwnd: int, tint: QColor) -> bool:
         user32, dwm = ctypes.WinDLL("user32"), ctypes.WinDLL("dwmapi")
         user32.SetWindowCompositionAttribute.argtypes = [wintypes.HWND, ctypes.POINTER(Data)]
         dwm.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
-        abgr = (tint.alpha() << 24) | (tint.blue() << 16) | (tint.green() << 8) | tint.red()
-        accent = Accent(4, 2, abgr, 0)                       # 4 = acrylic blur behind
+        if tint is None:
+            accent = Accent(0, 0, 0, 0)                       # 0 = off
+        else:
+            abgr = (tint.alpha() << 24) | (tint.blue() << 16) | (tint.green() << 8) | tint.red()
+            accent = Accent(4, 2, abgr, 0)                    # 4 = acrylic blur behind
         data = Data(19, ctypes.pointer(accent), ctypes.sizeof(accent))   # 19 = accent policy
         ok = bool(user32.SetWindowCompositionAttribute(hwnd, ctypes.byref(data)))
         round_ = ctypes.c_int(2)                              # DWMWCP_ROUND
         dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(round_), 4)
-        return ok
+        return ok and tint is not None
     except (OSError, AttributeError):
         return False
 
@@ -334,13 +341,15 @@ class CardWindow(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.notch = notch
         self.blur = False
-        self._tint = None
+        self._tint = "unset"
 
-    def set_backdrop(self, tint: QColor):
-        if tint.rgba() != self._tint:
-            self._tint = tint.rgba()
-            self.blur = enable_acrylic(int(self.winId()), tint)
+    def set_backdrop(self, tint: QColor | None):
+        key = tint.rgba() if tint is not None else None
+        if key != self._tint:
+            self._tint = key
+            self.blur = set_acrylic(int(self.winId()), tint)
             log.debug("card backdrop: %s", "acrylic" if self.blur else "translucent")
+            self.update()
 
     def paintEvent(self, e):
         qp = QPainter(self)
