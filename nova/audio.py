@@ -306,3 +306,7 @@ def _bell(freqs: list[float], step: float = 0.085, length: float = 0.17, vol: fl
 CHIME_LISTEN = _bell([330, 440])           # rising E4 -> A4: "I'm listening"
 CHIME_SLEEP = _bell([440, 330])            # falling: "going back to sleep"
 CHIME_ERROR = _tones([300, 300], vol=0.2)  # low double beep
+# A timer is done: a soft rising arpeggio, twice (C5 E5 G5 C6).
+CHIME_ALERT = np.concatenate([_bell([523, 659, 784, 1047], step=0.11, length=0.35, vol=0.26),
+                              np.zeros(int(0.25 * OUT_SR), np.float32),
+                              _bell([523, 659, 784, 1047], step=0.11, length=0.35, vol=0.26)])

@@ -46,7 +46,7 @@ def main():
     bridge = ui.Bridge()
     assistant = Assistant(cfg, bridge)
     mascot = remembered.get("mascot", cfg["ui"]["mascot"])
-    notch = ui.Notch(bridge, assistant.levels, cfg["ui"]["accent"], mascot)
+    notch = ui.Notch(bridge, assistant.levels, cfg["ui"]["accent"], mascot, cfg["ui"]["hide_in_fullscreen"])
     notch_shown = remembered.get("notch", cfg["ui"]["notch"])
     tray = ui.Tray(bridge, cfg["voice"]["menu"], cfg["voice"]["name"], notch_shown, mascot)
     notch.menu = tray.menu
@@ -64,8 +64,19 @@ def main():
         state.save(mascot=name)
         log.info("mascot: %s", name)
 
+    apps_win: list = [None]
+
+    def show_apps():
+        from .apps_window import AppsWindow
+        if apps_win[0] is None or not apps_win[0].isVisible():
+            apps_win[0] = AppsWindow()
+        apps_win[0].show()
+        apps_win[0].raise_()
+        apps_win[0].activateWindow()
+
     bridge.notch_toggled.connect(toggle_notch)
     bridge.mascot_selected.connect(select_mascot)
+    bridge.apps_requested.connect(show_apps)
 
     def quit_app():
         assistant.quit()

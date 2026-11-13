@@ -52,6 +52,27 @@ SCENARIOS = {
         ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2), ("say", "Goodbye."),
         ("after", ui.IDLE, 0.0),
     ],
+    "lookups": [                                     # "Let me check." plays while it looks things up
+        ("say", "Hey Nova, what's the weather like?"),           # NOVA's weather tool, your city
+        ("after", ui.SEARCHING, 0), ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "What's in the news today?"),                    # NOVA's news tool
+        ("after", ui.SEARCHING, 0), ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "Who won the last Formula One race?"),           # web search
+        ("after", ui.SEARCHING, 0), ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "That's all, thanks."),
+        ("after", ui.IDLE, 0.0),
+    ],
+    "pc control": [                                  # the timer rings after the conversation
+        ("say", "Hey Nova, set a timer for forty seconds."),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "What's the volume at?"),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "Delete my downloads folder."),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "That's all, thanks."),
+        ("after", ui.IDLE, 0.0),
+        ("after", ui.ALERT, 0.0), ("after", ui.IDLE, 0.0),
+    ],
     "pause then talk": [
         ("say", "Hey Nova."), ("silence", 1.8), ("say", "How many legs does a spider have?"),
         ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2), ("say", "Goodbye."),

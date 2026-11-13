@@ -39,7 +39,17 @@ vocabulary = ["Claude", "Spotify", "Zen Browser", "File Pilot", "Mum", "Magdaong
 model = "haiku"
 path = ""                  # empty = find claude.exe automatically
 conversation_timeout = 300 # seconds idle before starting a fresh conversation
-location = ""              # e.g. "Auckland, New Zealand" (used once web search arrives)
+# Your city: the default for "what's the weather?" and which country's news you get. Empty = NOVA asks.
+location = "Manila, Philippines"
+# Let Claude look things up: web search, plus NOVA's weather (Open-Meteo) and news (Google News)
+# tools. All read-only: it still can't run commands or touch files.
+web_search = true
+
+[pc]
+# Let NOVA control a few harmless things on this PC: media keys (play/pause, next, previous), the
+# volume, timers, and opening the apps you allow (tray > Apps NOVA can open). It can't delete, move
+# or edit files, run commands, install anything, change other settings, close apps or shut down.
+enabled = true
 
 [voice]
 # Pick a voice from the tray icon (right-click > Voice); your choice is remembered in state.json.
@@ -67,7 +77,8 @@ menu = [
 Magdaong = "Mugduh-ong"
 
 [ui]
-# Starting mascot: "cat", "robot" or "orb" (the tray's Mascot menu overrides it; remembered in state.json).
+# Starting mascot: "cat", "robot", "fox", "frog", "ghost", "axolotl" or "orb" (the tray's Mascot menu
+# overrides it; remembered in state.json).
 mascot = "cat"
 # Colour of the notch's progress bar, level bars and caret. Empty = your Windows accent colour.
 accent = ""
@@ -75,3 +86,5 @@ accent = ""
 live_captions = true
 # Show the notch at the bottom of the screen. Toggle from the tray (right-click > Show notch); that choice is remembered.
 notch = true
+# Hide the notch while a fullscreen app (a game, a video, a presentation) is in front. NOVA still listens.
+hide_in_fullscreen = true

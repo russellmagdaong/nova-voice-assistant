@@ -20,7 +20,7 @@ from PySide6.QtCore import QPoint, QPointF, QRectF, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from nova import pixelbot, pixelcat, ui  # noqa: E402
+from nova import ui  # noqa: E402
 
 Q = "What's the weather going to be like in Auckland tomorrow afternoon?"
 SCENES = [
@@ -29,6 +29,7 @@ SCENES = [
     ("live caption while you talk", ui.LISTENING,
      dict(live="What's the weather going to be like in Auckland tomorrow after", mic=0.35)),
     ("thinking", ui.THINKING, dict(you=Q, t=0.55)),
+    ("searching the web", ui.SEARCHING, dict(you=Q, answer="Let me check.", t=0.3, frame="look_right")),
     ("speaking", ui.SPEAKING, dict(you=Q, spk=0.3, frame="talk",
                                    answer="Tomorrow afternoon in Auckland looks mostly sunny, around nineteen "
                                           "degrees, with a light southwest breeze. You probably won't need an "
@@ -85,7 +86,7 @@ def render(n: ui.Notch, qp: QPainter, x0: int, y0: int, title: str, state: str, 
 
 def frame_sheet(path: Path, scale: int = 6):
     """Every frame of each pixel mascot, big, on dark (with its outline) and light backgrounds."""
-    arts = [pixelcat, pixelbot]
+    arts = [m for m in ui.MASCOTS.values() if m is not ui.orb]
     cw = max(a.COLS for a in arts) * scale + 12
     ch = max(a.ROWS for a in arts) * scale + 24
     n = max(len(a.FRAMES) for a in arts)

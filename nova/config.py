@@ -16,7 +16,7 @@ DEFAULTS = {
     "mic": {"device": ""},
     "speech_to_text": {"model": "base.en", "device": "cuda", "compute_type": "float16", "check_model": "base.en",
                        "vocabulary": ["Claude", "Spotify", "Zen Browser", "File Pilot"]},
-    "claude": {"model": "haiku", "path": "", "conversation_timeout": 300, "location": ""},
+    "claude": {"model": "haiku", "path": "", "conversation_timeout": 300, "location": "", "web_search": True},
     "voice": {"name": "kokoro:af_bella", "rate": "+5%", "kokoro_speed": 1.05, "menu": [
         ["kokoro:af_bella", "Bella (Kokoro, US)"],
         ["kokoro:af_heart", "Heart (Kokoro, US)"],
@@ -29,7 +29,8 @@ DEFAULTS = {
         ["edge:en-US-AvaMultilingualNeural", "Ava (Microsoft, online)"],
         ["edge:en-US-AndrewMultilingualNeural", "Andrew (Microsoft, online)"],
     ], "pronunciations": {}},
-    "ui": {"mascot": "cat", "accent": "", "live_captions": True, "notch": True},
+    "ui": {"mascot": "cat", "accent": "", "live_captions": True, "notch": True, "hide_in_fullscreen": True},
+    "pc": {"enabled": True},
 }
 
 

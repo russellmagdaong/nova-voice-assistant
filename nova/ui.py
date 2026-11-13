@@ -1,8 +1,8 @@
 """Notch and tray icon. Runs on the Qt main thread.
 
-The notch has three looks (tray > Mascot; remembered):
-- "cat" / "robot": a pixel-art mascot peeking up from the bottom edge of the screen
-  (pixelcat.py / pixelbot.py), with a card above it for what you say and what NOVA answers.
+The notch's look is picked in tray > Mascot (remembered):
+- a pixel-art mascot peeking up from the bottom edge of the screen (cat, robot, fox, frog, ghost,
+  axolotl: pixel*.py), with a card above it for what you say and what NOVA answers;
 - "orb": the classic notch, a thin pill that opens into a panel with an animated wireframe orb
   (orb.py) beside the text.
 The card is its own small window. In dark mode it's black glass (translucent black, no blur);
@@ -16,6 +16,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import math
+import os
 import random
 import time
 
@@ -24,20 +25,21 @@ from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QFontMetricsF, 
                            QPainter, QPainterPath, QPen, QPixmap)
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
-from . import orb, pixelart, pixelbot, pixelcat
+from . import orb, pixelart, pixelaxolotl, pixelbot, pixelcat, pixelfox, pixelfrog, pixelghost
 
 log = logging.getLogger("nova.ui")
 
 # States sent by the assistant.
-LOADING, IDLE, LISTENING, THINKING, SPEAKING, ALERT, MUTED, ERROR = (
-    "loading", "idle", "listening", "thinking", "speaking", "alert", "muted", "error")
-ACTIVE = (LISTENING, THINKING, SPEAKING, ALERT, ERROR)
+LOADING, IDLE, LISTENING, THINKING, SEARCHING, SPEAKING, ALERT, MUTED, ERROR = (
+    "loading", "idle", "listening", "thinking", "searching", "speaking", "alert", "muted", "error")
+ACTIVE = (LISTENING, THINKING, SEARCHING, SPEAKING, ALERT, ERROR)
 
-STATUS_TEXT = {LOADING: "Waking up", LISTENING: "Listening", THINKING: "Thinking", SPEAKING: "Nova",
-               ALERT: "Reminder", MUTED: "Asleep", ERROR: "Something went wrong", IDLE: ""}
+STATUS_TEXT = {LOADING: "Waking up", LISTENING: "Listening", THINKING: "Thinking", SEARCHING: "Searching the web",
+               SPEAKING: "Nova", ALERT: "Reminder", MUTED: "Asleep", ERROR: "Something went wrong", IDLE: ""}
 
-MASCOTS = {"cat": pixelcat, "robot": pixelbot, "orb": orb}
-MASCOT_MENU = [("cat", "Black cat"), ("robot", "Robot"), ("orb", "Orb")]
+MASCOTS = {"cat": pixelcat, "robot": pixelbot, "fox": pixelfox, "frog": pixelfrog, "ghost": pixelghost,
+           "axolotl": pixelaxolotl, "orb": orb}
+MASCOT_MENU = [(key, m.NAME) for key, m in MASCOTS.items()]
 
 
 class Bridge(QObject):
@@ -46,6 +48,7 @@ class Bridge(QObject):
     heard = Signal(str)          # what the user said (final, from Whisper)
     partial = Signal(str)        # live caption while the user is talking ("" clears it)
     answer = Signal(str)         # answer text so far (replaces previous)
+    activity = Signal(str)       # what NOVA is looking up ("Checking the weather"), shown while SEARCHING
     countdown = Signal(float)    # 1..0 time left to reply in a conversation; -1 hides it
     # user actions (connected by the assistant / main)
     stop_requested = Signal()
@@ -54,6 +57,7 @@ class Bridge(QObject):
     voice_selected = Signal(str)
     notch_toggled = Signal(bool)
     mascot_selected = Signal(str)
+    apps_requested = Signal()     # tray > Apps NOVA can open
     quit_requested = Signal()
 
 
@@ -154,6 +158,60 @@ def set_acrylic(hwnd: int, tint: QColor | None) -> bool:
         return False
 
 
+def fullscreen_app_in_front(hwnd: int, fg: int | None = None) -> bool:
+    """True if a fullscreen app (a game, a video, a presentation) is in front on the monitor that
+    holds window `hwnd` (the notch). A maximised window is not fullscreen; the desktop isn't.
+    `fg`: check this window instead of the one in front (for tests)."""
+    try:
+        from ctypes import wintypes
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+        user32, shell32 = ctypes.WinDLL("user32"), ctypes.WinDLL("shell32")
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.MonitorFromWindow.restype = wintypes.HANDLE
+        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MonitorInfo)]
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+        user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.IsZoomed.argtypes = [wintypes.HWND]
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+
+        # Games in exclusive fullscreen and presentation mode (Windows knows these directly).
+        quns = ctypes.c_int(0)
+        if fg is None:
+            if shell32.SHQueryUserNotificationState(ctypes.byref(quns)) == 0 and quns.value in (3, 4):
+                return True
+            fg = user32.GetForegroundWindow()
+        if not fg:
+            return False
+        name = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(fg, name, 64)
+        if name.value in ("Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+            return False                                  # the desktop or the taskbar
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(fg, ctypes.byref(pid))
+        if pid.value == os.getpid():
+            return False                                  # NOVA's own windows
+        mon = user32.MonitorFromWindow(fg, 2)             # MONITOR_DEFAULTTONEAREST
+        if mon != user32.MonitorFromWindow(hwnd, 2):
+            return False                                  # fullscreen on another monitor
+        info = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
+        r = wintypes.RECT()
+        if not user32.GetMonitorInfoW(mon, ctypes.byref(info)) or not user32.GetWindowRect(fg, ctypes.byref(r)):
+            return False
+        m = info.rcMonitor
+        if not (r.left <= m.left and r.top <= m.top and r.right >= m.right and r.bottom >= m.bottom):
+            return False
+        caption = (user32.GetWindowLongW(fg, -16) & 0x00C00000) == 0x00C00000   # GWL_STYLE, WS_CAPTION
+        return not (caption and user32.IsZoomed(fg))     # (maximised with an auto-hidden taskbar)
+    except (OSError, AttributeError):
+        return False
+
+
 # ---- pixel mascots -------------------------------------------------------------------------------
 class Sprite:
     """A pixel-art mascot (pixelcat / pixelbot): picks its frame (state, blinks, glances, talking
@@ -232,6 +290,8 @@ class Sprite:
             return "talk" if self.mouth else "blink" if blinking else "idle"
         if state == THINKING:
             return "blink" if blinking else "think"
+        if state == SEARCHING:                       # looks around, as if reading
+            return ("look_left", "look_right")[int(now / 0.6) % 2]
         if hovered:
             return "listen"
         if now < self.glance_until:
@@ -388,7 +448,8 @@ class Notch(QWidget):
 
     FAST_MS, SLOW_MS = 16, 66
 
-    def __init__(self, bridge: Bridge, levels, accent: str = "", mascot: str = "cat"):
+    def __init__(self, bridge: Bridge, levels, accent: str = "", mascot: str = "cat",
+                 hide_in_fullscreen: bool = True):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
                          | Qt.WindowDoesNotAcceptFocus | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -401,13 +462,17 @@ class Notch(QWidget):
         self._theme_checked = time.monotonic()
         self.card_win = CardWindow(self)
         self.card_win.set_backdrop(self.theme.tint)
-        self.shown = True
+        self.shown = False             # on screen now (set by _apply_shown)
+        self.user_shown = True         # tray > Show notch
+        self.fullscreen = False        # a fullscreen app (game, video) is in front: stay out of the way
+        self.hide_in_fullscreen = hide_in_fullscreen
 
         self.state = LOADING
         self.state_t = time.monotonic()
         self.you = WordFlow()          # what you said (final), or the live caption
         self.live = False              # self.you is a live caption
         self.answer = WordFlow()
+        self.activity = ""             # what it's looking up, while SEARCHING
         self.hover_main = self.hover_card = False
         self.hover_until = 0.0         # moving from the mascot to the card crosses a gap
         self.linger_until = 0.0
@@ -427,12 +492,16 @@ class Notch(QWidget):
         self.tick.start()
         self.collapse_timer = QTimer(self, singleShot=True)
         self.collapse_timer.timeout.connect(self._wake)
+        self.fs_timer = QTimer(self, interval=1000)
+        self.fs_timer.timeout.connect(self._check_fullscreen)
+        self.fs_timer.start()
         self.set_mascot(mascot)
 
         bridge.state.connect(self.set_state)
         bridge.heard.connect(self._set_heard)
         bridge.partial.connect(self._set_partial)
         bridge.answer.connect(self._set_answer)
+        bridge.activity.connect(self._set_activity)
         bridge.countdown.connect(self._set_countdown)
 
         self.resize(self.W, self.H)
@@ -458,7 +527,21 @@ class Notch(QWidget):
         return self.sprite is None
 
     def set_shown(self, on: bool):
-        """Show or hide the notch (tray > Show notch). Hidden, it also stops animating."""
+        """Show or hide the notch (tray > Show notch)."""
+        self.user_shown = on
+        self._apply_shown()
+
+    def _check_fullscreen(self):
+        fs = self.hide_in_fullscreen and fullscreen_app_in_front(int(self.winId()))
+        if fs != self.fullscreen:
+            self.fullscreen = fs
+            log.info("fullscreen app %s: notch %s", "in front" if fs else "gone", "hidden" if fs else "back")
+            self._apply_shown()
+
+    def _apply_shown(self):
+        """Shown if the user wants it and no fullscreen app is in front. Hidden, it also stops
+        animating."""
+        on = self.user_shown and not self.fullscreen
         self.shown = on
         if on:
             self.tick.start()
@@ -545,6 +628,10 @@ class Notch(QWidget):
 
     def _set_answer(self, text: str):
         self.answer.set(text)
+        self._wake()
+
+    def _set_activity(self, text: str):
+        self.activity = text
         self._wake()
 
     # ---- mouse ----------------------------------------------------------------------
@@ -670,7 +757,7 @@ class Notch(QWidget):
 
     def _progress(self) -> str:
         """The thin bar along the card's bottom: thinking (moving) or time left to reply."""
-        if self.state == THINKING:
+        if self.state in (THINKING, SEARCHING):
             return "busy"
         if self.state == LISTENING and self.countdown >= 0 and not self.live:
             return "countdown"
@@ -681,6 +768,8 @@ class Notch(QWidget):
             return "Your turn"
         if self.state == IDLE and self.answer.words:
             return "Nova"
+        if self.state in (SEARCHING, ALERT) and self.activity:
+            return self.activity
         return STATUS_TEXT.get(self.state, "")
 
     def _hint(self) -> str:
@@ -969,7 +1058,7 @@ class Tray(QSystemTrayIcon):
         group.setExclusive(True)
         self.mascot_actions = {}
         for key, label in MASCOT_MENU:
-            act = QAction(label, mm, checkable=True)
+            act = QAction(mascot_icon(key), label, mm, checkable=True)
             act.setChecked(key == self.mascot)
             act.triggered.connect(lambda _=False, k=key: bridge.mascot_selected.emit(k))
             group.addAction(act)
@@ -985,6 +1074,7 @@ class Tray(QSystemTrayIcon):
                 act.triggered.connect(lambda _=False, v=vid: bridge.voice_selected.emit(v))
                 group.addAction(act)
                 vm.addAction(act)
+        self.menu.addAction("Apps NOVA can open…", bridge.apps_requested.emit)
         self.menu.addSeparator()
         self.menu.addAction("Quit NOVA", bridge.quit_requested.emit)
         self.setContextMenu(self.menu)

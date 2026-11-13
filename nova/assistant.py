@@ -5,11 +5,14 @@ Conversation:  "Hey Nova ..." starts a conversation. After each answer NOVA keep
                without the wake word, until 10 s of silence, "that's all"/"goodbye", or a click.
 Talking over:  while NOVA thinks or speaks, the mic stays on (echo-cancelled). If you start
                talking, NOVA stops and listens.
+Alerts:        a finished timer rings (chime + voice + notch) when NOVA is asleep or between
+               turns of a conversation, muted or not.
 """
 from __future__ import annotations
 
 import collections
 import logging
+import queue
 import re
 import threading
 import time
@@ -18,12 +21,14 @@ from typing import Callable
 
 import numpy as np
 
-from . import state, ui
-from .audio import (CHIME_ERROR, CHIME_LISTEN, CHIME_SLEEP, MIC_BLOCK, MIC_SR, Mic, Player,
+from . import state, tools_server, ui
+from .audio import (CHIME_ALERT, CHIME_ERROR, CHIME_LISTEN, CHIME_SLEEP, MIC_BLOCK, MIC_SR, Mic, Player,
                     make_echo_canceller, rms)
 from .brain import Brain, ClaudeError
 from .caption import LiveCaption, NoCaption
+from .pc_tools import PCTools
 from .stt import Transcriber
+from .tool_host import ToolHost
 from .tts import Voice
 from .wake import WakeDetector, split_wake
 
@@ -60,6 +65,8 @@ INTERRUPT_WORDS = {"wait", "stop", "hold", "hang", "no", "nope", "actually", "so
                    "but", "what", "huh", "nevermind"}
 # Whisper sometimes "hears" these in near-silence.
 JUNK = {"", "you", "thank you", "thanks for watching", "thank you for watching", "bye", "so", "uh", "um"}
+# What the notch says while Claude uses a tool.
+LOOKUP_TEXT = {"WebSearch": "Searching the web", "get_weather": "Checking the weather", "get_news": "Getting the news"}
 
 
 @dataclass
@@ -83,6 +90,9 @@ class Assistant:
         self.noise = 200.0
         self.speaker_s = 0.0                 # seconds of NOVA speech the echo canceller has seen
         self.current_answer: list[str] = []
+        self.alerts: queue.Queue[str] = queue.Queue()     # finished timers waiting to be announced
+        self.pc: PCTools | None = None
+        self.tool_host: ToolHost | None = None
         bridge.stop_requested.connect(self.stop_requested)
         bridge.mute_toggled.connect(self.set_muted)
         bridge.new_conversation.connect(self.new_conversation)
@@ -148,6 +158,35 @@ class Assistant:
         self._quit.set()
         self._abort.set()
         self.player.stop()
+        if self.pc:
+            self.pc.timers.cancel_all()
+
+    def alert(self, text: str):
+        """A timer is done (any thread): announce it at the next chance (asleep or between turns)."""
+        self.alerts.put(text)
+
+    def _deliver_alerts(self):
+        while not self._quit.is_set():
+            try:
+                text = self.alerts.get_nowait()
+            except queue.Empty:
+                return
+            log.info("alert: %s", text)
+            self.bridge.activity.emit("Timer")
+            self.bridge.answer.emit(text)
+            self.bridge.state.emit(ui.ALERT)
+            self.mic.paused = True
+            self.player.reset()
+            self._speaking = True                # a click on the notch stops it
+            try:
+                if self.player.play(CHIME_ALERT):
+                    self.voice.say(text, self.player)
+            finally:
+                self._speaking = False
+                self.player.close()
+                time.sleep(0.3)
+                self.mic.flush()
+                self.mic.paused = self.muted
 
     # ---- startup ---------------------------------------------------------------------------
     def run(self):
@@ -168,13 +207,26 @@ class Assistant:
             if self.mic:
                 self.mic.stop()
             self.brain.close()
+            if self.tool_host:
+                self.tool_host.close()
 
     def _load(self):
         c = self.cfg
         self.bridge.state.emit(ui.LOADING)
         t = time.perf_counter()
+        # NOVA's own tools for Claude: weather + news (if lookups are on) and the PC controls.
+        tools, funcs = [], {}
+        if c["claude"]["web_search"]:
+            tools_server.LOCATION = c["claude"]["location"]
+            tools, funcs = list(tools_server.TOOLS), dict(tools_server.FUNCS)
+        if c["pc"]["enabled"]:
+            self.pc = PCTools(on_timer_done=self.alert, allowed_apps=lambda: state.load().get("apps", []))
+            pt, pf = self.pc.registry()
+            tools, funcs = tools + pt, {**funcs, **pf}
+        self.tool_host = ToolHost(tools, funcs) if tools else None
         self.brain = Brain(c["claude"]["path"] or None, c["claude"]["model"],
-                           c["claude"]["conversation_timeout"], c["claude"]["location"])
+                           c["claude"]["conversation_timeout"], c["claude"]["location"],
+                           c["claude"]["web_search"], self.tool_host)
         self.brain.start()                      # warm up Claude while the models load
         self.voice = Voice(c["voice"]["name"], c["voice"]["rate"], c["voice"]["kokoro_speed"],
                            c["voice"]["pronunciations"])
@@ -214,6 +266,16 @@ class Assistant:
             block = self.mic.read(timeout=0.5)
             self._sync_gpu()
             self._trim_after_startup()
+            if not self.alerts.empty():
+                self._busy = True
+                try:
+                    self._deliver_alerts()
+                finally:
+                    self._busy = False
+                    self._back_to_sleep()
+                    if self.muted:
+                        self.bridge.state.emit(ui.MUTED)
+                continue
             if block is None or self.muted:
                 continue
             self.ring.append(block)
@@ -450,6 +512,8 @@ class Assistant:
             else:
                 interrupted = self._answer(cmd, t_end)
 
+            if not self.alerts.empty():
+                self._deliver_alerts()           # a timer finished while NOVA was answering
             if not follow or self._quit.is_set():
                 return
             # Listen for the next turn (no wake word).
@@ -529,13 +593,27 @@ class Assistant:
             answer.append(s)
             self.bridge.answer.emit(" ".join(answer))
 
+        searching = [False]
+
         def on_first_audio():
             timing["first"] = time.perf_counter()
-            self.bridge.state.emit(ui.SPEAKING)
+            if not searching[0]:                 # ("Let me check." plays while it searches)
+                self.bridge.state.emit(ui.SPEAKING)
+
+        def on_search(tool: str):
+            if tool not in LOOKUP_TEXT:              # PC actions are instant: stay "Thinking"
+                return
+            searching[0] = True
+            self.bridge.activity.emit(LOOKUP_TEXT[tool])
+            self.bridge.state.emit(ui.SEARCHING)
 
         def timed(deltas):
             for d in deltas:
                 timing.setdefault("claude", time.perf_counter())
+                if searching[0]:                 # the answer after a web search has started
+                    searching[0] = False
+                    if "first" in timing:
+                        self.bridge.state.emit(ui.SPEAKING)
                 yield d
 
         timing["asked"] = time.perf_counter()
@@ -543,7 +621,7 @@ class Assistant:
         if barge:
             barge.start()
         try:
-            deltas = self.brain.ask(cmd, cancelled=lambda: self.player.stopped)
+            deltas = self.brain.ask(cmd, cancelled=lambda: self.player.stopped, on_search=on_search)
             self.voice.speak_stream(timed(deltas), self.player, on_sentence, on_first_audio)
             if "first" in timing:
                 log.info("LATENCY end of speech -> first spoken word: %.2fs "

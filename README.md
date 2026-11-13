@@ -1,6 +1,6 @@
 # N.O.V.A. — Not Only a Voice Assistant
 
-Say **"Hey Nova"** and ask anything. NOVA answers out loud using Claude (through your signed-in Claude Code CLI, no API key). It lives at the bottom centre of your screen (a pixel-art cat or robot peeking up from the edge, or a glowing orb notch) and in the tray.
+Say **"Hey Nova"** and ask anything, including things that need the web (weather, news, scores). NOVA answers out loud using Claude (through your signed-in Claude Code CLI, no API key). It lives at the bottom centre of your screen (a pixel-art mascot peeking up from the edge, or a glowing orb notch) and in the tray.
 
 ## Run it
 
@@ -22,29 +22,41 @@ First time on a new machine: `powershell -ExecutionPolicy Bypass -File setup.ps1
 - **Click the notch** while NOVA is talking to stop it (the conversation continues).
 - **Your words appear on the notch as you speak.** The live caption is a rough guess (offline Vosk); when you stop, Whisper's more accurate text replaces it, and that's what NOVA answers.
 - **"New conversation"** / **"start over"** makes Claude forget what you talked about. It also forgets by itself after 5 minutes of not being used.
+- **Current information**: NOVA looks it up, says a quick "Let me check." while the card shows what it's doing, then answers. Questions it can answer from what it knows aren't looked up (no wait).
+  - **Weather** ("what's the weather?", "will it rain tomorrow?", "weather in Cebu this weekend?"): live data from Open-Meteo, for your city unless you name another. Answer in ~5 s.
+  - **News** ("what's in the news?", "any tech news?", "world news"): fresh Google News headlines for your country, each with how long ago it was published. Answer in ~3-4 s.
+  - **Anything else current** ("who won the last F1 race?"): a web search. Answer in ~8-10 s.
+- **Your PC** (a short fixed list, nothing else):
+  - **Media**: "pause the music", "next song", "previous track" (media keys: Spotify, YouTube, …).
+  - **Volume**: "what's the volume?", "set the volume to 30", "turn it up/down", "mute".
+  - **Timers**: "set a timer for 10 minutes", "set a pasta timer for 8 minutes", "how long is left?", "cancel the timer". When one is done NOVA chimes, says so, and the notch pops up (even when muted; if you're mid-conversation, right after its current answer). Click the notch to stop it. Timers are forgotten if NOVA quits.
+  - **Opening apps** you've allowed: "open Spotify", "open my browser". Choose them in the tray menu: **Apps NOVA can open…**.
+  - It **can't** delete, move or edit files, run commands, install or remove anything, change other settings, close apps, or shut down/restart. Ask, and it says so.
 
 ## The notch
 
 Pick its look from the tray: right-click > **Mascot** (remembered):
 
-- **Black cat** and **Robot** (pixel art): peek up from the bottom edge of the screen, in the centre (just ears and eyes, or antennae and the top of the robot's screen). They blink and glance around while they wait. Say "Hey Nova" (or hover) and they pop up with a card above them: ears perk up / bigger eyes while you talk (and a hop with your voice), looking up while thinking, a moving mouth with NOVA's voice, asleep with small drifting z's while muted (the robot's screen dims), sad when something goes wrong.
-- **Orb**: the classic notch, a thin glowing pill that opens into a panel with an animated wireframe orb beside the text. The orb wobbles with your voice and NOVA's, spins faster while thinking, turns grey when muted and red on an error.
+- **Pixel mascots: Black cat, Robot, Fox, Frog, Ghost, Axolotl.** They peek up from the bottom edge of the screen, in the centre (just ears and eyes, the frog's eyes, the ghost's round top…). They blink and glance around while they wait. Say "Hey Nova" (or hover) and they pop up with a card above them: perked ears / bigger eyes while you talk (and a hop with your voice), looking up while thinking, glancing left and right while searching the web, a moving mouth with NOVA's voice, asleep with small drifting z's while muted, sad when something goes wrong.
+- **Orb**: the classic notch, a thin glowing pill that opens into a panel with the orb beside the text: a glowing core inside a mesh of points and links that keeps gently changing shape. It swells with your voice and NOVA's, spins faster while thinking or searching, turns grey when muted and red on an error.
+- **Fullscreen apps** (games, videos, presentations): the notch hides while one is in front and comes back after. NOVA still listens and talks.
 
 The card:
 
-- **Status** (Listening / Thinking / Your turn) with a small level meter. A thin bar along the bottom moves while NOVA thinks, and runs down while it waits for your reply.
+- **Status** (Listening / Thinking / Searching the web / Your turn) with a small level meter. A thin bar along the bottom moves while NOVA thinks or searches, and runs down while it waits for your reply.
 - **Text**: your words live while you talk; then your question in small print above NOVA's answer, which grows with the reply.
 - **See-through**: in dark mode it's black glass (translucent black, no blur, so what's behind shows through darkened); in light mode Windows blurs what's behind it (acrylic, like Start and the flyouts). It follows your Windows accent colour. On dark themes the black cat gets a faint outline so it doesn't disappear.
 - Left-click: stop NOVA talking (or end the conversation if it's listening). Right-click: the tray menu.
 
-The pixel mascots are drawn as text in `nova\pixelcat.py` and `nova\pixelbot.py` (one character per pixel), so they're easy to edit; the orb is `nova\orb.py`. Preview every state without talking: `.venv\Scripts\python.exe tools\notch_preview.py` (writes `samples\notch_preview_cat.png` / `_robot` / `_orb` and `samples\mascot_frames.png`).
+The pixel mascots are drawn as text in `nova\pixel*.py` (one character per pixel), so they're easy to edit; the orb is `nova\orb.py`. Preview every state without talking: `.venv\Scripts\python.exe tools\notch_preview.py` (writes `samples\notch_preview_<mascot>.png` and `samples\mascot_frames.png`).
 
 ## Tray icon
 
-- The icon is your mascot (the cat's or robot's head with a white outline so it stands out on the taskbar, or the orb); grey and asleep when muted.
+- The icon is your mascot's head (the black cat's has a white outline so it shows on a dark taskbar), or the orb with a little star; grey and asleep when muted.
 - Left click: mute or unmute the wake word. **Muting also frees NOVA's video memory** (~1.7 GB down to ~0.1 GB; the last 0.1 GB stays until you quit). RAM is freed too (NOVA uses ~0.2-0.3 GB while running). After unmuting NOVA is ready in ~1-3 s, using its smaller speech model for the ~9 s it takes the accurate one to reload.
 - **Show notch** (right-click menu) hides or shows the notch; your choice is remembered. NOVA still listens and chimes with it hidden.
-- Right click: Mute wake word, New conversation, Show notch, **Mascot**, **Voice**, Quit NOVA.
+- **Apps NOVA can open…** (right-click menu): every app in your Start menu, with a tick box. Tick the ones NOVA may open, and add other names you use under "Also called" (e.g. "browser" for Zen). Terminals, system and admin tools, and uninstallers are greyed out: they can't be allowed. Saved in `state.json`; no restart needed.
+- Right click: Mute wake word, New conversation, Show notch, **Mascot**, **Voice**, **Apps NOVA can open…**, Quit NOVA.
 
 ### Voices
 
@@ -71,12 +83,16 @@ Edit `config.toml`, then restart NOVA. Main ones:
 | `[speech_to_text] vocabulary` | Names and words it should expect (keep "Claude" in here) |
 | `[speech_to_text] device` | `cuda` (GPU, default) or `cpu`. Falls back to CPU if CUDA fails. Kokoro uses the GPU automatically when it can |
 | `[claude] model` | `haiku` (fastest) or `sonnet` |
+| `[claude] location` | Your city (`"Manila, Philippines"`): the default for weather, and which country's news you get. Empty = NOVA asks which city |
+| `[claude] web_search` | Let Claude look things up: web search, weather and news (default true) |
 | `[voice] name` | Starting voice, e.g. `kokoro:af_bella` or `edge:en-US-AvaMultilingualNeural` (the tray choice overrides it) |
 | `[voice] kokoro_speed` | Speaking speed for Kokoro voices (default 1.05) |
 | `[voice.pronunciations]` | How to say a word, spelled the way it sounds (e.g. `Magdaong = "Mugduh-ong"`). Only the voice changes; the text keeps the real spelling |
-| `[ui] mascot` | Starting look: `cat`, `robot` or `orb` (the tray's Mascot menu overrides it) |
+| `[pc] enabled` | Media keys, volume, timers and opening allowed apps (default true) |
+| `[ui] mascot` | Starting look: `cat`, `robot`, `fox`, `frog`, `ghost`, `axolotl` or `orb` (the tray's Mascot menu overrides it) |
 | `[ui] accent` | Colour for the notch's bars and caret; empty = your Windows accent colour |
 | `[ui] notch` | Show the notch (default true; the tray's Show notch overrides it) |
+| `[ui] hide_in_fullscreen` | Hide the notch while a game, video or presentation is fullscreen (default true) |
 | `[ui] live_captions` | Show your words on the notch as you speak (default true) |
 
 ## Start with Windows
@@ -88,7 +104,16 @@ powershell -ExecutionPolicy Bypass -File install-startup.ps1 -Remove   # remove
 
 ## Safety
 
-Claude runs with **no tools**: it can only talk. A misheard sentence can't run commands or touch files.
+A misheard sentence (or a trick in a web page) can't run commands, touch your files or break your PC, because Claude simply has no way to:
+
+- **Its only tools**: web search, and NOVA's own short list: weather and news (read-only: Open-Meteo and Google News, no API keys), media keys, volume, timers, and opening apps you've ticked. No Bash, PowerShell, file or settings tools exist in its session, and anything else that would need permission is refused automatically.
+- **No tool can** delete, move or edit files, run commands, install or uninstall, change settings other than the volume, close apps, or shut down, restart, sleep or sign out.
+- **Every input is checked** (types, allowed values, ranges, lengths): e.g. volume 0-100, timers 1 second to 24 hours, at most 10 timers.
+- **Apps** open only if you ticked them, by the Start-menu ID saved when you did (never a name or path Claude makes up), through Explorer like clicking them in Start. Terminals, system/admin tools and uninstallers can't be ticked at all, and are refused even if `state.json` is edited by hand.
+- **NOVA's tools listen only on 127.0.0.1** (not reachable from the network), need a secret that's new every time NOVA starts, and refuse requests from web pages. Every tool call is logged in `logs\nova.log`.
+- Set `[claude] web_search = false` and `[pc] enabled = false` for a Claude with no tools at all.
+
+Try the weather and news tools on their own: `.venv\Scripts\python.exe nova\tools_server.py --test "Manila, Philippines"`
 
 ## Troubleshooting
 

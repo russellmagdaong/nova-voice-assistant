@@ -141,4 +141,4 @@ ICON_ASLEEP = [        # standby: dim screen, closed eyes, antennae off
 
 def icon_image(muted: bool = False) -> QImage:
     """16x16 tray icon with a white outline (grey and in standby when muted)."""
-    return outlined_icon(ICON_ASLEEP if muted else ICON, PALETTE, "#b8b8c0" if muted else "#ffffff", dx=1, dy=2)
+    return outlined_icon(ICON_ASLEEP if muted else ICON, PALETTE, None, dx=1, dy=2)   # no white outline

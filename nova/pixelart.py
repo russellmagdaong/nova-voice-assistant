@@ -41,10 +41,11 @@ def render(rows: list[str] | list[list[str]], palette: dict[str, str], rim: str 
     return img
 
 
-def outlined_icon(rows: list[str] | list[list[str]], palette: dict[str, str], outline: str,
+def outlined_icon(rows: list[str] | list[list[str]], palette: dict[str, str], outline: str | None,
                   dx: int, dy: int, size: int = 16) -> QImage:
     """A size x size tray icon: `rows` placed at (dx, dy) with a solid outline around them
-    (8 neighbours, corners included, so it reads at 16 px)."""
+    (8 neighbours, corners included, so it reads at 16 px). `outline` None: no outline (only
+    the black cat needs one, to show on a dark taskbar)."""
     canvas = [["."] * size for _ in range(size)]
     for y, row in enumerate(rows):
         for x, c in enumerate(row):
@@ -57,7 +58,7 @@ def outlined_icon(rows: list[str] | list[list[str]], palette: dict[str, str], ou
             c = canvas[y][x]
             if c != ".":
                 img.setPixelColor(x, y, QColor(palette[c]))
-            elif any(0 <= x + ox < size and 0 <= y + oy < size and canvas[y + oy][x + ox] != "."
-                     for ox in (-1, 0, 1) for oy in (-1, 0, 1)):
+            elif outline and any(0 <= x + ox < size and 0 <= y + oy < size and canvas[y + oy][x + ox] != "."
+                                 for ox in (-1, 0, 1) for oy in (-1, 0, 1)):
                 img.setPixelColor(x, y, QColor(outline))
     return img
