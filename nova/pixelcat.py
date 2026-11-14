@@ -147,3 +147,14 @@ def icon_image(muted: bool = False) -> QImage:
     """16x16 tray icon: the head (ears to chin) with a white outline (grey when muted)."""
     head = [r[HEAD_X:HEAD_X + 14] for r in grid("sleep" if muted else "idle")[1:16]]
     return outlined_icon(head, PALETTE, "#b8b8c0" if muted else "#ffffff", dx=1, dy=1)
+
+
+# ---- Looking around: the eyes follow the cursor (NOVA's window and the notch). The whole eye
+# moves one pixel within the black face, so the cat can look up and down too.
+_O, _L, _R = EYES["open"][:2], EYES["left"][:2], EYES["right"][:2]
+EYES.update({
+    "gaze_up": (*_O, 0, -1), "gaze_up_left": (*_L, -1, -1), "gaze_up_right": (*_R, 1, -1),
+    "gaze_down": (*_O, 0, 1), "gaze_down_left": (*_L, -1, 1), "gaze_down_right": (*_R, 1, 1),
+})
+FRAMES.update({f"look_{d}": ("up", f"gaze_{d}", False)
+               for d in ("up", "up_left", "up_right", "down", "down_left", "down_right")})

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<!-- NOVA's logo, "Slingshot" (drawn by Codex): a planet with an orbit swinging around it, in the colour theme's gradient. Used from 32 px up; nova-small.svg below that. -->
+<defs>
+<linearGradient id="theme" x1="32" y1="24" x2="216" y2="232" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#0000F1"/>
+<stop offset="0.5" stop-color="#0000F2"/>
+<stop offset="1" stop-color="#0000F3"/>
+</linearGradient>
+</defs>
+<circle cx="124" cy="126" r="76" fill="url(#theme)"/>
+<path d="M78 67 C48 99 49 150 79 179 C58 171 41 152 37 132 C30 104 45 79 78 67 Z" fill="#000000" opacity="0.16"/>
+<path d="M35 168 C6 211 66 217 143 172 C202 138 237 94 224 72" fill="none" stroke="#000000" stroke-opacity="0.22" stroke-width="28" stroke-linecap="round"/>
+<path d="M35 162 C6 205 66 211 143 166 C202 132 237 88 224 66" fill="none" stroke="url(#theme)" stroke-width="20" stroke-linecap="round"/>
+<path d="M35 162 C6 205 66 211 143 166 C202 132 237 88 224 66" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="9" stroke-linecap="round"/>
+<circle cx="220" cy="48" r="15" fill="url(#theme)"/>
+</svg>

@@ -15,6 +15,7 @@ import asyncio
 import collections
 import logging
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -72,6 +73,24 @@ SCENARIOS = {
         ("say", "That's all, thanks."),
         ("after", ui.IDLE, 0.0),
         ("after", ui.ALERT, 0.0), ("after", ui.IDLE, 0.0),
+    ],
+    "reminders and notes": [                         # the reminder rings after the conversation
+        ("say", "Hey Nova, remind me in forty five seconds to check the oven."),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "Add bread and coffee to my shopping list."),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "What's on my shopping list?"),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "That's all, thanks."),
+        ("after", ui.IDLE, 0.0),
+        ("after", ui.ALERT, 0.0), ("after", ui.IDLE, 0.0),
+    ],
+    "click to talk": [                               # NOVA's window: click the mascot instead of "Hey Nova"
+        ("click",), ("after", ui.LISTENING, 0.8),
+        ("say", "What's two plus two?"),
+        ("after", ui.SPEAKING, 0), ("after", ui.LISTENING, 1.2),
+        ("say", "That's all, thanks."),
+        ("after", ui.IDLE, 0.0),
     ],
     "pause then talk": [
         ("say", "Hey Nova."), ("silence", 1.8), ("say", "How many legs does a spider have?"),
@@ -232,6 +251,7 @@ def main():
 
     room = Room(0.0 if args.headphones else 0.6)
     cfg = config.load()
+    cfg["reminders"]["data_dir"] = tempfile.mkdtemp(prefix="nova_test_")   # never the real data\ folder
     if os.environ.get("NOVA_NO_CAPTIONS"):
         cfg["ui"]["live_captions"] = False
     bridge = ui.Bridge()
@@ -265,6 +285,9 @@ def main():
                 time.sleep(len(clips[st[1]]) / MIC_SR)
             elif st[0] == "silence":
                 time.sleep(st[1])
+            elif st[0] == "click":
+                print("   YOU : (click on the mascot)", flush=True)
+                a.talk_requested()
             elif st[0] == "after":
                 mark = len(events)
                 deadline = time.perf_counter() + 45

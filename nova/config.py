@@ -29,8 +29,10 @@ DEFAULTS = {
         ["edge:en-US-AvaMultilingualNeural", "Ava (Microsoft, online)"],
         ["edge:en-US-AndrewMultilingualNeural", "Andrew (Microsoft, online)"],
     ], "pronunciations": {}},
-    "ui": {"mascot": "cat", "accent": "", "live_captions": True, "notch": True, "hide_in_fullscreen": True},
+    "ui": {"mascot": "cat", "theme": "sunrise", "accent": "", "live_captions": True, "notch": True,
+           "hide_in_fullscreen": True},
     "pc": {"enabled": True},
+    "reminders": {"enabled": True, "data_dir": ""},
 }
 
 
@@ -45,4 +47,27 @@ def load(path: Path = ROOT / "config.toml") -> dict:
                     cfg.setdefault(section, {}).update(values)
         except tomllib.TOMLDecodeError as e:
             log.error("config.toml has an error (%s); using defaults", e)
+    return cfg
+
+
+# What the settings window may change (saved in state.json "settings", applied over config.toml).
+SETTABLE = {"claude.location": str, "claude.model": str, "claude.web_search": bool, "pc.enabled": bool,
+            "reminders.enabled": bool, "conversation.follow_up_timeout": float, "voice.kokoro_speed": float,
+            "ui.live_captions": bool, "ui.hide_in_fullscreen": bool, "ui.theme": str}
+
+
+def apply_overrides(cfg: dict, settings: dict) -> dict:
+    """Settings changed in the settings window win over config.toml (known keys and types only)."""
+    for key, value in (settings or {}).items():
+        kind = SETTABLE.get(key)
+        if kind is None:
+            continue
+        try:
+            value = kind(value)
+        except (TypeError, ValueError):
+            continue
+        if key == "claude.model" and value not in ("haiku", "sonnet"):
+            continue
+        section, name = key.split(".")
+        cfg[section][name] = value
     return cfg

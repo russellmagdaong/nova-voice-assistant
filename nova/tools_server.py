@@ -12,7 +12,9 @@ Standard library only, so it starts fast. Try it without Claude:
 from __future__ import annotations
 
 import json
+import logging
 import sys
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -47,6 +49,35 @@ def fetch(url: str, timeout: float = 6.0, tries: int = 2) -> bytes:
 
 # ---- weather ----------------------------------------------------------------------------------
 _places: dict[str, dict] = {}
+log = logging.getLogger("nova.tools")
+
+# Open-Meteo's forecast server, then two of its other servers that answer /v1/forecast the same way
+# (on other networks: from some ISPs api.open-meteo.com can't be reached while these can).
+FORECAST_HOSTS = ("api.open-meteo.com", "previous-runs-api.open-meteo.com", "historical-forecast-api.open-meteo.com")
+_host = {"i": 0, "since": 0.0}
+
+
+def forecast(q: str) -> dict:
+    """GET /v1/forecast?q from the first server that answers (the last one that worked first; the
+    main one is tried again after 30 minutes)."""
+    if _host["i"] and time.monotonic() - _host["since"] > 1800:
+        _host["i"] = 0
+    order = [_host["i"]] + [i for i in range(len(FORECAST_HOSTS)) if i != _host["i"]]
+    last: Exception | None = None
+    for i in order:
+        try:
+            data = json.loads(fetch(f"https://{FORECAST_HOSTS[i]}/v1/forecast?{q}", timeout=5, tries=1))
+        except Exception as e:  # noqa: BLE001 (can't reach it: try the next one)
+            last = e
+            continue
+        if data.get("error"):
+            last = RuntimeError(data.get("reason", "error"))
+            continue
+        if i != _host["i"]:
+            log.info("weather: %s answered (%s didn't)", FORECAST_HOSTS[i], FORECAST_HOSTS[_host["i"]])
+            _host["i"], _host["since"] = i, time.monotonic()
+        return data
+    raise RuntimeError(f"couldn't reach Open-Meteo ({last})")
 
 
 def geocode(place: str) -> dict:
@@ -91,7 +122,7 @@ def get_weather(place: str = "", days: int = 3) -> str:
         "hourly": "temperature_2m,precipitation_probability,weather_code",
         "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,"
                  "precipitation_sum,uv_index_max,sunrise,sunset"})
-    w = json.loads(fetch(f"https://api.open-meteo.com/v1/forecast?{q}"))
+    w = forecast(q)
     cur, hourly, daily = w["current"], w["hourly"], w["daily"]
     where = ", ".join(x for x in (p.get("name"), p.get("admin1"), p.get("country")) if x)
     now = datetime.fromisoformat(cur["time"])
@@ -117,6 +148,23 @@ def get_weather(place: str = "", days: int = 3) -> str:
             f"sunset {_hour_min(daily['sunset'][i])}.")
     lines.append("(Source: Open-Meteo.)")
     return "\n".join(lines)
+
+
+def current_weather(place: str = "") -> dict:
+    """The weather now, short, for NOVA's window: {"place", "temp", "text", "high", "low"} ({} if
+    no city is set)."""
+    place = (place or LOCATION).strip()
+    if not place:
+        return {}
+    p = geocode(place)
+    q = urllib.parse.urlencode({"latitude": p["latitude"], "longitude": p["longitude"], "timezone": "auto",
+                                "forecast_days": 1, "current": "temperature_2m,weather_code",
+                                "daily": "temperature_2m_max,temperature_2m_min"})
+    w = forecast(q)
+    cur, daily = w["current"], w["daily"]
+    return {"place": p.get("name") or place, "temp": round(cur["temperature_2m"]),
+            "text": WMO.get(cur["weather_code"], ""), "high": round(daily["temperature_2m_max"][0]),
+            "low": round(daily["temperature_2m_min"][0])}
 
 
 def _hour_min(t: str) -> str:
@@ -225,8 +273,8 @@ def call(name: str, args: dict, tools: list[dict] = TOOLS, funcs: dict = FUNCS) 
             v = int(v)
         if want and (not isinstance(v, want) or (spec.get("type") != "boolean" and isinstance(v, bool))):
             raise ValueError(f"{k} must be a {spec['type']}")
-        if isinstance(v, str) and len(v) > 100:
-            raise ValueError(f"{k} is too long")
+        if isinstance(v, str) and len(v) > spec.get("maxLength", 100):
+            raise ValueError(f"{k} is too long (at most {spec.get('maxLength', 100)} characters)")
         if "enum" in spec and v not in spec["enum"]:
             raise ValueError(f"{k} must be one of {', '.join(map(str, spec['enum']))}")
         if isinstance(v, (int, float)) and not isinstance(v, bool):

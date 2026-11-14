@@ -26,7 +26,8 @@ from .audio import (CHIME_ALERT, CHIME_ERROR, CHIME_LISTEN, CHIME_SLEEP, MIC_BLO
                     make_echo_canceller, rms)
 from .brain import Brain, ClaudeError
 from .caption import LiveCaption, NoCaption
-from .pc_tools import PCTools
+from .memory import Memory
+from .pc_tools import PCTools, spoken_duration
 from .stt import Transcriber
 from .tool_host import ToolHost
 from .tts import Voice
@@ -90,14 +91,21 @@ class Assistant:
         self.noise = 200.0
         self.speaker_s = 0.0                 # seconds of NOVA speech the echo canceller has seen
         self.current_answer: list[str] = []
-        self.alerts: queue.Queue[str] = queue.Queue()     # finished timers waiting to be announced
+        self.alerts: queue.Queue[tuple[str, str]] = queue.Queue()   # (kind, text) waiting to be announced
         self.pc: PCTools | None = None
         self.tool_host: ToolHost | None = None
+        # Reminders and notes (data\): ready now so the tray's window can show them while models load;
+        # reminders that came due while NOVA was off are queued and announced once it's ready.
+        rem = cfg.get("reminders", {})
+        self.memory: Memory | None = (Memory(lambda text: self.alert(text, "Reminder"), rem.get("data_dir"))
+                                      if rem.get("enabled", True) else None)
         bridge.stop_requested.connect(self.stop_requested)
         bridge.mute_toggled.connect(self.set_muted)
         bridge.new_conversation.connect(self.new_conversation)
         bridge.voice_selected.connect(self.select_voice)
+        bridge.talk_requested.connect(self.talk_requested)
         self._busy = False                   # in a conversation
+        self._talk = threading.Event()       # clicked the mascot in NOVA's window: listen now
 
     # ---- UI actions (called on the Qt thread) ----------------------------------------
     def stop_requested(self):
@@ -108,6 +116,11 @@ class Assistant:
             self._abort.set()
 
     _speaking = False
+
+    def talk_requested(self):
+        """Click on the mascot in NOVA's window: listen for a question, as if "Hey Nova" was said."""
+        if not self.muted and not self._busy and hasattr(self, "wake"):
+            self._talk.set()
 
     def set_muted(self, on: bool):
         self.muted = on
@@ -160,19 +173,33 @@ class Assistant:
         self.player.stop()
         if self.pc:
             self.pc.timers.cancel_all()
+        if self.memory:
+            self.memory.close()
 
-    def alert(self, text: str):
-        """A timer is done (any thread): announce it at the next chance (asleep or between turns)."""
-        self.alerts.put(text)
+    def alert(self, text: str, kind: str = "Timer"):
+        """A timer or reminder is due (any thread): announce it at the next chance (asleep or
+        between turns of a conversation)."""
+        self.alerts.put((kind, text))
+
+    def upcoming(self) -> str:
+        """The next timer and reminder, for the notch when it's idle (Qt thread; cheap)."""
+        parts = []
+        if self.pc and (t := self.pc.timers.soonest()):
+            left = max(0, round(t["ends"] - time.monotonic()))
+            name = t["label"] or spoken_duration(t["seconds"], adjective=True)
+            parts.append(f"{name} timer {left // 60}:{left % 60:02d}")
+        if self.memory and (r := self.memory.upcoming()):
+            parts.append(r)
+        return "  ·  ".join(parts)
 
     def _deliver_alerts(self):
         while not self._quit.is_set():
             try:
-                text = self.alerts.get_nowait()
+                kind, text = self.alerts.get_nowait()
             except queue.Empty:
                 return
             log.info("alert: %s", text)
-            self.bridge.activity.emit("Timer")
+            self.bridge.activity.emit(kind)
             self.bridge.answer.emit(text)
             self.bridge.state.emit(ui.ALERT)
             self.mic.paused = True
@@ -223,6 +250,9 @@ class Assistant:
             self.pc = PCTools(on_timer_done=self.alert, allowed_apps=lambda: state.load().get("apps", []))
             pt, pf = self.pc.registry()
             tools, funcs = tools + pt, {**funcs, **pf}
+        if self.memory:
+            mt, mf = self.memory.registry()
+            tools, funcs = tools + mt, {**funcs, **mf}
         self.tool_host = ToolHost(tools, funcs) if tools else None
         self.brain = Brain(c["claude"]["path"] or None, c["claude"]["model"],
                            c["claude"]["conversation_timeout"], c["claude"]["location"],
@@ -275,6 +305,16 @@ class Assistant:
                     self._back_to_sleep()
                     if self.muted:
                         self.bridge.state.emit(ui.MUTED)
+                continue
+            if self._talk.is_set():
+                self._talk.clear()
+                if not self.muted:
+                    self._busy = True
+                    try:
+                        self._handle_talk()
+                    finally:
+                        self._busy = False
+                        self._back_to_sleep()
                 continue
             if block is None or self.muted:
                 continue
@@ -494,6 +534,19 @@ class Assistant:
             self._chime(CHIME_SLEEP)
             return
         self._conversation(cmd, res.t_end)
+
+    def _handle_talk(self):
+        """Started with a click instead of the wake word: chime, then wait for the question."""
+        self._abort.clear()
+        self.bridge.state.emit(ui.LISTENING)
+        log.info("listening (clicked)")
+        self._chime(CHIME_LISTEN)
+        got = self._listen_once(time.perf_counter() + self.conv["follow_up_timeout"])
+        if got is None:
+            if not self._abort.is_set():
+                self._chime(CHIME_SLEEP)
+            return
+        self._conversation(*got)
 
     # ---- the conversation ----------------------------------------------------------------------------
     def _conversation(self, cmd: str, t_end: float):

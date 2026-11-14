@@ -47,8 +47,13 @@ web_search = true
 
 [pc]
 # Let NOVA control a few harmless things on this PC: media keys (play/pause, next, previous), the
-# volume, timers, and opening the apps you allow (tray > Apps NOVA can open). It can't delete, move
+# volume, timers, and opening the apps you allow (NOVA settings > Apps). It can't delete, move
 # or edit files, run commands, install anything, change other settings, close apps or shut down.
+enabled = true
+
+[reminders]
+# Reminders ("remind me at 5 to call Mum") and notes ("note that…", "add milk to my shopping list"),
+# kept only on this PC in the data folder. See, add and restore them in NOVA settings (tray > Settings).
 enabled = true
 
 [voice]
@@ -80,6 +85,9 @@ Magdaong = "Mugduh-ong"
 # Starting mascot: "cat", "robot", "fox", "frog", "ghost", "axolotl" or "orb" (the tray's Mascot menu
 # overrides it; remembered in state.json).
 mascot = "cat"
+# Colour theme for NOVA's logo and the orb: "ocean", "aurora", "sunrise", "forest", "graphite",
+# "nebula" or "accent" (your Windows accent colour). NOVA settings > Appearance overrides it.
+theme = "sunrise"
 # Colour of the notch's progress bar, level bars and caret. Empty = your Windows accent colour.
 accent = ""
 # Show your words on the notch as you speak (rough at first; Whisper's text replaces it when you stop).

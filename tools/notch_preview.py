@@ -26,6 +26,8 @@ Q = "What's the weather going to be like in Auckland tomorrow afternoon?"
 SCENES = [
     ("idle", ui.IDLE, dict()),
     ("hover", ui.IDLE, dict(hover=True)),
+    ("hover, with a timer and a reminder", ui.IDLE,
+     dict(hover=True, upcoming="pasta timer 3:12  ·  call Mum, 5:00 PM")),
     ("live caption while you talk", ui.LISTENING,
      dict(live="What's the weather going to be like in Auckland tomorrow after", mic=0.35)),
     ("thinking", ui.THINKING, dict(you=Q, t=0.55)),
@@ -48,6 +50,7 @@ def render(n: ui.Notch, qp: QPainter, x0: int, y0: int, title: str, state: str, 
         n.sprite.rim = not light
     n.state, n.state_t = state, time.monotonic() - 5
     n.hover_main, n.hover_card, n.hover_until = o.get("hover", False), False, 0.0
+    n.upcoming = (lambda: o["upcoming"]) if "upcoming" in o else None
     n.you.clear(); n.answer.clear(); n.live = False; n.countdown = o.get("countdown", -1.0)
     if "live" in o:
         n.you.set(o["live"], animate=False); n.live = True

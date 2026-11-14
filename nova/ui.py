@@ -21,11 +21,11 @@ import random
 import time
 
 from PySide6.QtCore import QObject, QPointF, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QFontMetricsF, QIcon, QLinearGradient,
+from PySide6.QtGui import (QAction, QActionGroup, QColor, QCursor, QFont, QFontMetricsF, QIcon, QLinearGradient,
                            QPainter, QPainterPath, QPen, QPixmap)
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
 
-from . import orb, pixelart, pixelaxolotl, pixelbot, pixelcat, pixelfox, pixelfrog, pixelghost
+from . import orb, pixelart, pixelaxolotl, pixelbot, pixelcat, pixelfox, pixelfrog, pixelghost, themes
 
 log = logging.getLogger("nova.ui")
 
@@ -57,7 +57,10 @@ class Bridge(QObject):
     voice_selected = Signal(str)
     notch_toggled = Signal(bool)
     mascot_selected = Signal(str)
-    apps_requested = Signal()     # tray > Apps NOVA can open
+    settings_requested = Signal(str)   # tray > Settings (page key, "" = Home)
+    restart_requested = Signal()       # tray > Restart NOVA (picks up a new build)
+    hud_requested = Signal()           # tray > Open NOVA (its own window, hud.py)
+    talk_requested = Signal()          # click on the mascot in NOVA's window: listen, like "Hey Nova"
     quit_requested = Signal()
 
 
@@ -213,6 +216,23 @@ def fullscreen_app_in_front(hwnd: int, fg: int | None = None) -> bool:
 
 
 # ---- pixel mascots -------------------------------------------------------------------------------
+GAZE_S = 5.0             # the eyes follow the cursor for this long after it last moved
+GAZE_FRAMES = {(-1, -1): "look_up_left", (0, -1): "look_up", (1, -1): "look_up_right",
+               (-1, 0): "look_left", (0, 0): "idle", (1, 0): "look_right",
+               (-1, 1): "look_down_left", (0, 1): "look_down", (1, 1): "look_down_right"}
+
+
+def gaze_toward(eye_x: float, eye_y: float, x: float, y: float, near: float) -> tuple[int, int]:
+    """Which way to look at (x, y) from eyes at (eye_x, eye_y): (dx, dy), each -1, 0 or 1. Straight
+    ahead when the point is close; otherwise the nearest of eight directions."""
+    vx, vy = x - eye_x, y - eye_y
+    d = math.hypot(vx, vy)
+    if d < near:
+        return 0, 0
+    nx, ny = vx / d, vy / d
+    return (0 if abs(nx) < 0.38 else 1 if nx > 0 else -1), (0 if abs(ny) < 0.38 else 1 if ny > 0 else -1)
+
+
 class Sprite:
     """A pixel-art mascot (pixelcat / pixelbot): picks its frame (state, blinks, glances, talking
     mouth) and draws it on whole screen pixels, scaled up without smoothing."""
@@ -232,6 +252,15 @@ class Sprite:
         self.glance = "look_left"
         self.mouth = False
         self.mouth_t = 0.0
+        self.gaze: tuple[int, int] | None = None     # towards the cursor (set by the window), or None
+
+    def gaze_frame(self) -> str:
+        """The look for self.gaze; a mascot without that one looks the nearest way it can."""
+        dx, dy = self.gaze
+        for key in ((dx, dy), (dx, 0)):
+            if GAZE_FRAMES[key] in self.art.FRAMES:
+                return GAZE_FRAMES[key]
+        return "idle"
 
     @property
     def height(self) -> int:
@@ -263,7 +292,7 @@ class Sprite:
             self.blink_until = now + 0.13
             # Now and then a double blink.
             self.next_blink = now + (0.32 if random.random() < 0.2 else random.uniform(2.5, 6.5))
-        if state == IDLE and not hovered and now >= self.next_glance:
+        if state == IDLE and not hovered and self.gaze is None and now >= self.next_glance:
             self.glance = random.choice(("look_left", "look_right"))
             self.glance_until = now + random.uniform(0.9, 1.8)
             self.next_glance = now + random.uniform(7, 16)
@@ -294,6 +323,8 @@ class Sprite:
             return ("look_left", "look_right")[int(now / 0.6) % 2]
         if hovered:
             return "listen"
+        if self.gaze is not None:                    # following the cursor
+            return "blink" if blinking else self.gaze_frame()
         if now < self.glance_until:
             return self.glance
         return "blink" if blinking else "idle"
@@ -465,6 +496,7 @@ class Notch(QWidget):
         self.shown = False             # on screen now (set by _apply_shown)
         self.user_shown = True         # tray > Show notch
         self.fullscreen = False        # a fullscreen app (game, video) is in front: stay out of the way
+        self.hud_front = False         # NOVA's own window is in front (it shows all this, bigger)
         self.hide_in_fullscreen = hide_in_fullscreen
 
         self.state = LOADING
@@ -473,6 +505,7 @@ class Notch(QWidget):
         self.live = False              # self.you is a live caption
         self.answer = WordFlow()
         self.activity = ""             # what it's looking up, while SEARCHING
+        self.upcoming = None           # callable -> "pasta timer 3:12 · call Mum, 5:00 PM" (or "")
         self.hover_main = self.hover_card = False
         self.hover_until = 0.0         # moving from the mascot to the card crosses a gap
         self.linger_until = 0.0
@@ -486,6 +519,8 @@ class Notch(QWidget):
         self.t0 = time.monotonic()
         self._last_tick = time.monotonic()
         self._frame = 0
+        self._cursor = QCursor.pos()   # where the cursor was, and when it last moved (the eyes follow it)
+        self._cursor_t = -1e9
 
         self.tick = QTimer(self, interval=self.FAST_MS)
         self.tick.timeout.connect(self._on_tick)
@@ -531,6 +566,12 @@ class Notch(QWidget):
         self.user_shown = on
         self._apply_shown()
 
+    def set_hud_front(self, on: bool):
+        """NOVA's window is in front (active, maximised or fullscreen): the notch steps aside."""
+        if on != self.hud_front:
+            self.hud_front = on
+            self._apply_shown()
+
     def _check_fullscreen(self):
         fs = self.hide_in_fullscreen and fullscreen_app_in_front(int(self.winId()))
         if fs != self.fullscreen:
@@ -541,7 +582,7 @@ class Notch(QWidget):
     def _apply_shown(self):
         """Shown if the user wants it and no fullscreen app is in front. Hidden, it also stops
         animating."""
-        on = self.user_shown and not self.fullscreen
+        on = self.user_shown and not self.fullscreen and not self.hud_front
         self.shown = on
         if on:
             self.tick.start()
@@ -693,6 +734,8 @@ class Notch(QWidget):
             goal_b = clamp(level * 2.2 * wobble) if level > 0.02 else 0.0
             self.bars[i] += (goal_b - self.bars[i]) * 0.4
 
+        if self.sprite:
+            self.sprite.gaze = self._gaze(now)
         frame_changed = self.sprite.update(self.state, self.hovered, self.spk_l, now) if self.sprite else False
         self._sync_card()
         busy = card or self.state in ACTIVE or moving
@@ -706,6 +749,18 @@ class Notch(QWidget):
         interval = self.FAST_MS if busy else self.SLOW_MS
         if self.tick.interval() != interval:
             self.tick.setInterval(interval)
+
+    def _gaze(self, now: float) -> tuple[int, int] | None:
+        """Towards the cursor, for a few seconds after it moves (None: look around as usual)."""
+        p = QCursor.pos()
+        if p != self._cursor:
+            self._cursor, self._cursor_t = p, now
+        if now - self._cursor_t > GAZE_S:
+            return None
+        art = self.sprite.art
+        top = self.H - round(self.peek * art.ROWS) * Sprite.PX
+        return gaze_toward(self.x() + self.W / 2, self.y() + top + art.ROWS * 0.5 * Sprite.PX, p.x(), p.y(),
+                           near=art.COLS * Sprite.PX * 0.6)
 
     def _wake(self):
         """Something changed: animate at full speed from the next frame."""
@@ -773,6 +828,10 @@ class Notch(QWidget):
         return STATUS_TEXT.get(self.state, "")
 
     def _hint(self) -> str:
+        if self.state in (IDLE, MUTED) and self.upcoming:     # the next timer / reminder, if any
+            nxt = self.upcoming()
+            if nxt:
+                return f"Next: {nxt}"
         return {IDLE: "Say “Hey Nova”", MUTED: "Click the tray icon to wake me up.",
                 LOADING: "Loading voices and models…", LISTENING: "Go ahead, I'm listening…"}.get(self.state, "")
 
@@ -1023,6 +1082,12 @@ class Notch(QWidget):
 
 
 # ---- tray ----------------------------------------------------------------------------------
+def nova_icon() -> QIcon:
+    """NOVA's own logo in the current colour theme (themes.py, assets/nova.svg): for its windows.
+    (The tray shows your mascot instead.)"""
+    return themes.logo_icon()
+
+
 def mascot_icon(name: str, muted: bool = False) -> QIcon:
     """The tray icon for a mascot (asleep / grey when muted). The pixel ones are drawn 16x16, the
     tray's size at 100% scaling, and scaled by whole numbers so they stay crisp."""
@@ -1064,6 +1129,8 @@ class Tray(QSystemTrayIcon):
             group.addAction(act)
             mm.addAction(act)
             self.mascot_actions[key] = act
+        self.voice = voice
+        self.voice_actions = {}
         if voices:
             vm = self.menu.addMenu("Voice")
             group = QActionGroup(vm)
@@ -1071,11 +1138,18 @@ class Tray(QSystemTrayIcon):
             for vid, label in voices:
                 act = QAction(label, vm, checkable=True)
                 act.setChecked(vid == voice)
-                act.triggered.connect(lambda _=False, v=vid: bridge.voice_selected.emit(v))
+                act.triggered.connect(lambda _=False, v=vid: self._pick_voice(v))
                 group.addAction(act)
                 vm.addAction(act)
-        self.menu.addAction("Apps NOVA can open…", bridge.apps_requested.emit)
+                self.voice_actions[vid] = act
         self.menu.addSeparator()
+        hud = self.menu.addAction("Open NOVA", bridge.hud_requested.emit)
+        f = hud.font()
+        f.setBold(True)
+        hud.setFont(f)
+        self.menu.addAction("Settings", lambda: bridge.settings_requested.emit(""))
+        self.menu.addSeparator()
+        self.menu.addAction("Restart NOVA", bridge.restart_requested.emit)
         self.menu.addAction("Quit NOVA", bridge.quit_requested.emit)
         self.setContextMenu(self.menu)
         self.activated.connect(self._activated)
@@ -1084,6 +1158,16 @@ class Tray(QSystemTrayIcon):
         self.mascot = name if name in MASCOTS else "cat"
         self.mascot_actions[self.mascot].setChecked(True)
         self.setIcon(mascot_icon(self.mascot, self.mute_action.isChecked()))
+
+    def _pick_voice(self, vid: str):
+        self.voice = vid
+        self.bridge.voice_selected.emit(vid)
+
+    def set_voice(self, vid: str):
+        """Pick a voice (from the settings window): tick it here and tell the assistant."""
+        if vid in self.voice_actions:
+            self.voice_actions[vid].setChecked(True)
+        self._pick_voice(vid)
 
     def _mute(self, on: bool):
         self.setIcon(mascot_icon(self.mascot, muted=on))

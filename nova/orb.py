@@ -1,5 +1,5 @@
-"""The orb mascot: a glowing energy core inside a living mesh (blue -> violet -> magenta), drawn in
-code. It lives inside the expanded notch; collapsed, the notch is a thin pill.
+"""The orb mascot: a glowing energy core inside a living mesh, in the colour theme's three colours
+(themes.py), drawn in code. It lives inside the expanded notch; collapsed, the notch is a thin pill.
 
 The mesh is a network of points scattered over a sphere, each linked to its nearest neighbours,
 so it has no latitude/longitude lines (it doesn't look like a globe). The points drift on smooth
@@ -11,11 +11,11 @@ import math
 
 import numpy as np
 from PySide6.QtCore import QPointF, Qt
+from . import themes
 from PySide6.QtGui import (QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen,
                            QRadialGradient)
 
 NAME = "Orb"
-COLORS = ("#2a7bff", "#8b4dff", "#ff3dcf")      # top left -> bottom right
 GREY = ("#8a8f9c", "#767b88", "#9a9fab")
 RED = ("#ff6b6b", "#ff3b5c", "#ff8a6b")
 ORANGE = ("#ffb347", "#ff9f43", "#ffcf6b")
@@ -48,18 +48,18 @@ _SPECK_PH = _rng.uniform(0, 2 * math.pi, len(_SPECKS))
 def style(state: str, mic: float, spk: float) -> tuple[float, float, float, tuple[str, str, str]]:
     """(wobble, spin, glow, colours) for a notch state."""
     if state == "listening":
-        return 0.09 + 0.35 * mic, 0.55, 0.75 + 0.25 * min(1.0, mic * 2), COLORS
+        return 0.09 + 0.35 * mic, 0.55, 0.75 + 0.25 * min(1.0, mic * 2), themes.current_colors()
     if state in ("thinking", "searching"):
-        return 0.1, 1.6, 0.8, COLORS
+        return 0.1, 1.6, 0.8, themes.current_colors()
     if state == "speaking":
-        return 0.09 + 0.35 * spk, 0.6, 0.7 + 0.3 * min(1.0, spk * 2), COLORS
+        return 0.09 + 0.35 * spk, 0.6, 0.7 + 0.3 * min(1.0, spk * 2), themes.current_colors()
     if state in ("muted", "loading"):
         return 0.05, 0.12, 0.25, GREY
     if state == "error":
         return 0.08, 0.35, 0.6, RED
     if state == "alert":
         return 0.14, 1.0, 0.9, ORANGE
-    return 0.08, 0.3, 0.55, COLORS
+    return 0.08, 0.3, 0.55, themes.current_colors()
 
 
 def _shape(p: np.ndarray, t: float, wobble: float, spin: float):
@@ -95,8 +95,10 @@ def _radial(c: QPointF, R: float, stops) -> QRadialGradient:
 
 
 def paint(qp: QPainter, c: QPointF, R: float, t: float, wobble: float = 0.08, spin: float = 0.3,
-          glow: float = 0.55, colors=COLORS):
-    """Draw the orb centred on `c` with radius `R` at time `t` (seconds)."""
+          glow: float = 0.55, colors=None, look: tuple[float, float] = (0.0, 0.0)):
+    """Draw the orb centred on `c` with radius `R` at time `t` (seconds). `look` (-1..1 each way)
+    leans its bright core that way (towards the cursor, in NOVA's window)."""
+    colors = colors or themes.current_colors()
     qp.save()
     qp.setRenderHint(QPainter.Antialiasing)
     qp.setPen(Qt.NoPen)
@@ -107,9 +109,10 @@ def paint(qp: QPainter, c: QPointF, R: float, t: float, wobble: float = 0.08, sp
     qp.drawEllipse(c, R * 1.9, R * 1.9)
     # The core: a bright heart that breathes (and swells with the voice, via glow).
     core = R * (0.5 + 0.12 * pulse + 0.25 * max(0.0, glow - 0.6))
-    qp.setBrush(_radial(c, core, [(0.0, "#ffffff", 0.75 * glow), (0.3, colors[2], 0.55 * glow),
-                                  (0.7, colors[0], 0.25 * glow), (1.0, colors[0], 0.0)]))
-    qp.drawEllipse(c, core, core)
+    cc = QPointF(c.x() + look[0] * R * 0.2, c.y() + look[1] * R * 0.2)
+    qp.setBrush(_radial(cc, core, [(0.0, "#ffffff", 0.75 * glow), (0.3, colors[2], 0.55 * glow),
+                                   (0.7, colors[0], 0.25 * glow), (1.0, colors[0], 0.0)]))
+    qp.drawEllipse(cc, core, core)
 
     # The mesh, split by depth: the far side faint, the near side bright.
     x, y, z = _shape(_P, t, wobble, spin)
@@ -166,7 +169,7 @@ def icon_image(size: int, muted: bool = False) -> QImage:
     img.fill(Qt.transparent)
     qp = QPainter(img)
     qp.setRenderHint(QPainter.Antialiasing)
-    colors = GREY if muted else COLORS
+    colors = GREY if muted else themes.current_colors()
     c = QPointF(size / 2, size / 2)
     R = size * 0.47
     qp.setPen(Qt.NoPen)

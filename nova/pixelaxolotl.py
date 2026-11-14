@@ -149,3 +149,17 @@ def icon_image(muted: bool = False) -> QImage:
     if muted:
         palette.update(MUTED)
     return outlined_icon(rows, palette, None, dx=1, dy=1)     # no white outline (only the black cat has one)
+
+
+# ---- Looking around: the eyes follow the cursor (NOVA's window and the notch). The pupils
+# already sit at the top of the eye, so "up" looks the same as straight ahead.
+EYES.update({
+    "down": ["PPPP", "PEEP", "PHEP"],
+    "down_left": ["PPPP", "EEPP", "HEPP"],
+    "down_right": ["PPPP", "PPEE", "PPHE"],
+})
+FRAMES.update({
+    "look_down": ("normal", "down", "idle"),
+    "look_down_left": ("normal", "down_left", "idle"),
+    "look_down_right": ("normal", "down_right", "idle"),
+})

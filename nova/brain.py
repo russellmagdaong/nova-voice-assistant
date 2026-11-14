@@ -44,12 +44,21 @@ OFFLINE_PROMPT = """
 - You have no internet access (no web search, weather or news); if asked, say so briefly."""
 
 PC_PROMPT = """
-- On the user's PC you can do these things with NOVA's tools, and nothing else: media playback (play/pause, next, previous), the speaker volume, timers, and opening the apps the user has allowed. When asked, use the tool, then confirm in a few words, for example "Done, volume at thirty percent." or "Ten minute timer started." For timers, give the length in seconds.
-- You can't delete, move or edit files, run commands, install or remove software, change any setting other than the volume, close apps, or shut down, restart or sleep the PC. If asked, say briefly that you can't do that.
-- If an app isn't on the allowed list, say so, and that the user can allow it from NOVA's tray menu under "Apps NOVA can open"."""
+- On the user's PC you can do these things with NOVA's tools, and nothing else: media playback (play/pause, next, previous), playing music on Spotify, the speaker volume, timers, and opening the apps the user has allowed. When asked, use the tool, then confirm in a few words, for example "Done, volume at thirty percent." or "Ten minute timer started." For timers, give the length in seconds.
+- Music: to play something on Spotify, call play_spotify straight away (never web search first). kind "track" for a song (query: the song name, plus the artist if the user said it), "album", "artist" (for "play some Taylor Swift"), "playlist" (the user's own playlists are matched first, for "play my focus playlist"), or "liked" for their Liked Songs. Confirm with what the tool says is playing, for example "Playing Blinding Lights by The Weeknd." For "what song is this?", use spotify_now_playing. Pause, skip and go back with media_control.
+- You can't delete, move or edit the user's files, run commands, install or remove software, change any setting other than the volume, close apps, or shut down, restart or sleep the PC. If asked, say briefly that you can't do that.
+- If an app isn't on the allowed list, say so, and that the user can allow it in NOVA settings, on the Apps page (tray icon > Settings)."""
 
 NO_PC_PROMPT = """
 - You can't control the computer, open apps or set timers; if asked, say so briefly."""
+
+MEMORY_PROMPT = """
+- You keep the user's reminders and notes with NOVA's tools (stored only on this PC).
+- Reminders: work out the exact local date and time from the current time in brackets and give add_reminder "when" as YYYY-MM-DDTHH:MM (24-hour; add :SS for "in N minutes" so it's exactly N minutes from now); "at 5" with no AM or PM is the next sensible 5 o'clock (in the daytime, 5 PM). Repeating ones: repeat daily, weekdays or weekly. Then confirm the time and what it's for in a few words, for example "Okay, I'll remind you at five PM to call Mum." If the user says "timer", use a timer instead.
+- Notes: add_note saves anything the user wants remembered, optionally in a named list such as "shopping" or "todo". Use search_notes or list_notes to answer questions like "what's the wifi password?" or "what's on my shopping list?". delete_note and clear_list move notes to a bin the user can restore from for 30 days; there's no way to delete all notes at once by voice."""
+
+NO_MEMORY_PROMPT = """
+- You can't set reminders or take notes; if asked, say so briefly."""
 
 # Said while a lookup runs (if Claude hasn't said anything yet), so the wait isn't silent.
 SEARCH_FILLERS = ["Let me check.", "Let me look that up.", "One sec, let me check.", "Checking now."]
@@ -110,6 +119,7 @@ class Brain:
         names = self.tools.names if self.tools else []
         p = SYSTEM_PROMPT + (WEB_PROMPT if self.web_search else OFFLINE_PROMPT)
         p += PC_PROMPT if "set_timer" in names else NO_PC_PROMPT
+        p += MEMORY_PROMPT if "add_reminder" in names else NO_MEMORY_PROMPT
         if self.location:
             p += f"\n- The user is in {self.location}. Use that for local questions such as the weather."
         elif region := windows_region():
@@ -215,7 +225,7 @@ class Brain:
         with self._lock:
             if self._proc is None or self._proc.poll() is not None:
                 self._start_locked()
-            now = datetime.now().strftime("%A %d %B %Y, %I:%M %p")
+            now = datetime.now().strftime("%A %d %B %Y, %I:%M:%S %p")
             msg = {"type": "user", "message": {"role": "user", "content": f"[{now}] {text}"}}
             try:
                 self._proc.stdin.write(json.dumps(msg) + "\n")
@@ -279,7 +289,8 @@ class Brain:
 
 if __name__ == "__main__":
     # Quick manual test: python -m nova.brain ["question" ...]
-    # (PC tools on, with a pretend allowed-apps list: nothing is written to state.json.)
+    # (PC tools on, with a pretend allowed-apps list; reminders and notes in a temporary folder:
+    # nothing is written to state.json or data\.)
     logging.basicConfig(level=logging.INFO)
     from . import config, tools_server
     from .pc_tools import PCTools
@@ -290,7 +301,11 @@ if __name__ == "__main__":
                  allowed_apps=lambda: [{"name": "Calculator", "id": "Microsoft.WindowsCalculator_8wekyb3d8bbwe!App",
                                         "aliases": []}])
     tl, fn = pc.registry()
-    host = ToolHost(tools_server.TOOLS + tl, {**tools_server.FUNCS, **fn})
+    import tempfile
+    from .memory import Memory
+    mem = Memory(on_due=lambda text: print(f"\n   >>> REMINDER: {text}\n"), data_dir=tempfile.mkdtemp(prefix="nova_"))
+    ml, mf = mem.registry()
+    host = ToolHost(tools_server.TOOLS + tl + ml, {**tools_server.FUNCS, **fn, **mf})
     b = Brain(location=loc, tools=host)
     b.start()
     qs = sys.argv[1:] or ["What's the capital of France?", "And what about Germany?", "What time is it?",

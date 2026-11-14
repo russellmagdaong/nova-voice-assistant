@@ -17,9 +17,106 @@ Status (2026-11-14):
   - setup, start and install-startup scripts
   - README
 - **Phase 3 (PC control) is built and tested (2026-11-14).** It needs a live check by the user.
-  - Covers media keys, volume, timers, and opening allowed apps.
-  - The "Apps NOVA can open" window is the settings window.
-- **Phase 4 (reminders and notes) is on hold** at the user's request.
+  - Covers media keys, volume, timers, and opening allowed apps. Spotify search and play was added later.
+  - The settings window is now NOVA settings (below).
+- **NOVA settings window (2026-11-14), at the user's request:** "a centralized window where I can access all the settings". The tray's quick settings stay, and the tray gains "Open NOVA settings…". (Later the settings moved into NOVA's window, below, and this separate window was removed.)
+  - `nova/settings_window.py` plus `nova/fluent.py`, which holds the Windows 11 parts: sidebar buttons, cards, toggle switches, Mica through `DWMWA_SYSTEMBACKDROP_TYPE` plus a dark title bar, and the Segoe Fluent Icons font. Inputs keep Qt 6.12's windows11 style.
+  - Pages: Home, Timers, Reminders, Notes, Apps, Appearance, Voice, Assistant, Privacy & safety. They replace the separate Apps and Reminders & notes windows.
+  - Settings save to `state.json` "settings" and are applied over config.toml at start (`config.apply_overrides`, known keys and types only).
+    - Live: city, model, time to reply, speed, hide over fullscreen.
+    - After a restart: lookups, PC control, reminders, live captions. "Restart NOVA" starts `-m nova --restarted`, which waits up to 20 s for the lock, then quits the old one.
+  - The user's PC runs a tiling window manager: new windows open at 952x1000 whatever size is asked for.
+- **Logo and colour themes (2026-11-14):**
+  - Claude drew the logo (`assets/nova.svg`, a star sending out sound waves, with a simplified version for 16-24 px). The user disliked the purple-pink gradient.
+  - `nova/themes.py` adds themes for the logo and the orb: Ocean (the default at first), Aurora, Sunrise, Forest, Graphite, Nebula (the old purple-pink), and Windows accent (from `AccentPalette`).
+  - Logo SVGs use placeholder colours `#0000F1/2/3`, swapped at runtime. The orb reads `themes.current_colors()`; muted grey, error red and alert orange stay fixed.
+  - The theme is picked in NOVA settings > Appearance (live: window icon, orb, orb tray icon) and saved as `ui.theme`.
+  - `tools/make_logo.py` renders the PNGs, `.ico` and wordmarks in the default theme, plus `samples/logo_themes.png`.
+  - **Codex (gpt-6.1-sol) drew six more themeable logos** from a brief: original (not like Siri, Copilot, Alexa, Google or Cortana), SVG Tiny, placeholder colours, and readable at 16 px with `-small` versions.
+    - They are Daybreak (an eight-point burst), Cadence (a stepped voice signal), Slingshot (a planet and orbit), Starling (a star in a speech bubble), North (an N monogram) and Lookout (an assistant face).
+    - For a while they lived in `assets/logos/` with a Logo picker in NOVA settings > Appearance (`ui.logo`).
+  - **Final logo: Slingshot (2026-11-14).** The user chose it (in Sunrise) and asked for the logo options to go.
+    - Slingshot is now `assets/nova.svg` and `nova-small.svg`. `assets/logos/`, the Logo picker, `ui.logo` and `themes.LOGOS` are gone; a leftover `ui.logo` in state.json is ignored.
+    - Sunrise is the default theme. The startup `.ico`, PNGs and README wordmarks are Slingshot in Sunrise; the other themes stay pickable.
+- **Phase 4 (reminders and notes) is built and tested (2026-11-14).** It needs a live check by the user.
+- **NOVA's window (2026-11-14),** at the user's request: "a window for nova … something like a JARVIS ui that i can maximize AND make fullscreen … have the settings there as well. when the window is idle, make texts and buttons hidden, and only keep the mascot in the center".
+  - `nova/hud.py`, opened from tray > Open NOVA. All drawn with QPainter on one widget (Bahnschrift for the HUD labels), in the colour theme's colours (`orb.style` per state).
+    - Centre: the mascot. The orb uses `orb.paint`; the pixel mascots reuse `Sprite` for frames, scaled by whole pixels.
+    - Rings around it: hairlines, a turning tick ring, arcs at different speeds, and a dashed ring. While thinking or searching, a conical scanner sweeps and the arcs speed up. 96 voice ripples follow the mic or speaker level, and an arc counts down the time to reply.
+    - The conversation is drawn under the ring with `WordFlow`, centred.
+    - Chrome: corner brackets, the name and status, time and date (with a seconds bar), the weather (`tools_server.current_weather`, every 20 min), CPU and memory (`GetSystemTimes`, `GlobalMemoryStatusEx`), what's next (`assistant.upcoming`), and Spotify's song. The song comes from Spotify's window title (`EnumWindows`, in-process), never from spotify_cli, so it can't start Spotify. There are six round buttons.
+    - Fades: the chrome shows for 3 s after any mouse move or key, and the conversation while NOVA is busy plus 6 s. Fully idle leaves only the mascot, the pointer is hidden, and only the mascot's area repaints, at 30 fps for the orb and 15 fps for pixel mascots. Painting a 1280x800 frame takes 2-7 ms.
+    - Settings: `settings_window.SettingsPanel` (the sidebar and pages, split out of `SettingsWindow`) in a drawer that slides in from the right, accented in the theme's middle colour. With it open, the readouts fade and the mascot moves left.
+    - Click the mascot or press Space: `bridge.talk_requested` makes the assistant chime and listen as if "Hey Nova" was said (`_handle_talk`, then `_listen_once`). If NOVA is busy it stops it instead; if muted it unmutes.
+    - F11 or a double-click toggles fullscreen; Esc closes settings, then leaves fullscreen. Closing only hides the window. While it's in front (active, maximised or fullscreen) `Notch.set_hud_front` hides the notch, which would otherwise sit on the button row.
+  - Tested:
+    - Offscreen renders of every state (idle with chrome, idle with only the mascot, listening, searching, speaking, settings, muted) for the orb and the fox.
+    - On screen, with the user's tiling window manager: 952x1000 at first, fullscreen 1920x1080, maximised 1920x1017, the drawer, and the notch hiding and coming back.
+    - The conversation test has a new "click to talk" scenario: it heard the question and answered in 4.4 s.
+- **NOVA's window, second pass (2026-11-14).** The user asked for: "make the ui minimalistic there's too much happening", "the ui color changes based on the mascot", a new font, "remove the notch when the window is active", "make nova the centralized app and remove the separate window for the nova settings", a different pixel background for every mascot with the orb kept minimal, and a fix for "i can't choose a mascot in the settings within nova". Weather was also timing out.
+  - Minimal: the rings, scanner, voice ripples, tick marks, corner brackets, dot grid, CPU and memory, and two of the buttons are gone.
+    - Left: the mascot; the time, date and weather (top left); Next and Now playing (bottom corners, only when there's something); four buttons (talk, mute, settings, fullscreen); and the conversation.
+    - The orb gets one thin ring, only during a conversation, with a turning arc while thinking and a fill for the countdown.
+    - The mascot never moves or resizes; the text goes under it. Pixel mascots get a pixel text box with a 2 px border, and the buttons are square.
+  - Colours follow the mascot (`MASCOT_COLORS`, taken from each mascot's own palette). The orb follows the theme. The settings drawer's accent follows too.
+  - Fonts, downloaded from Google Fonts into `assets/fonts` with their OFL licences, loaded with `QFontDatabase.addApplicationFont`: Pixelify Sans with the pixel mascots, Outfit with the orb.
+  - Scenes (`nova/scenes.py`), drawn in code at half the mascot's pixel size with Bayer-dithered bands. Each scene's ground row lines up with the mascot's bottom edge, so it peeks over it like it peeks over the taskbar.
+    - The scenes: the cat's moonlit rooftops, the robot's station deck with a planet, the fox's dusk forest, the frog's pond at night, the ghost's misty hill with a big moon, and the axolotl's sea floor. The orb's background is plain dark with a soft theme glow.
+    - Claude drew a first version, which was too busy. Codex drew the one in use from a brief (calm, minimal, small palettes, quiet behind the clock and text box).
+    - Codex's sandbox couldn't run the project's Python, so it never saw its own renders; Claude rendered and checked them. Each scene takes 2-22 ms.
+  - Settings live only in NOVA's window: `SettingsWindow` was removed. Tray > Settings (renamed from "Open NOVA settings…") opens the window with the drawer.
+  - Mascot picker bug: a press on a `Tile` wasn't accepted, so it went up to the HUD, which closed the drawer and took the mouse grab, so the release never reached the tile. Fixed in two places: `Tile` accepts presses, and the drawer swallows presses that nothing inside it took. Tested with simulated clicks (frog, orb, axolotl): each was picked, the drawer stayed open, and clicking beside the drawer still closes it.
+  - The notch hides whenever the window is open and not minimised (before, only while it was active, maximised or fullscreen).
+  - Weather: `api.open-meteo.com` (51.81.167.44) couldn't be reached from the user's ISP at all (TCP timeouts, even on HTTP), while Quad9 returned 167.114.211.86, which worked.
+    - Fix: `tools_server.forecast()` tries the main server for 5 s, then `previous-runs-api.open-meteo.com` and `historical-forecast-api.open-meteo.com`, which answer `/v1/forecast` with the same data. It remembers the one that worked and tries the main one again after 30 minutes.
+    - Now about 7 s the first time, then about 0.9 s.
+- **Mic indicator and pixel-accurate scenes (2026-11-14),** at the user's request ("add an indicator when it picks up my mic", "make them pixel accurate to the pixels of the mascots").
+  - Scenes are drawn at the mascot's pixel size (they were half), on its grid (`HudWindow._grid`: grid origin ≤ 0 at the mascot's position mod its scale).
+    - The ground row is exactly the mascot's bottom edge. When settings slide in, the mascot snaps to the grid as it moves.
+    - The sleeping z's are a 4x4 glyph on the same grid. At 1280x800 a scene is about 119x75 art pixels; Codex's scenes hold up at that size.
+  - Mic indicator, top right: a 7x9 pixel microphone (a Fluent glyph with the orb) and four signal bars.
+    - It's on while `Mic.level` is above NOVA's own speech threshold, max(2.5 x noise, 300) / 4000, plus 0.8 s, and all the time it's LISTENING; never when muted. It shows even with the chrome hidden.
+    - The bars scale from the threshold to 5x the threshold.
+- **Tray:** "Open NOVA settings…" is now just "Settings" (it sits under "Open NOVA").
+- **Eyes follow the cursor; Restart NOVA (2026-11-14),** at the user's request ("the eyes follow my cursor", "reload nova so i don't have to keep running the command upon new builds").
+  - New looks per mascot:
+    - Cat: the whole eye moves a pixel up or down in its black face (`gaze_*`).
+    - Robot: the eye bars move about the screen; looking down, the mouth and blush move too.
+    - Fox, frog, ghost, axolotl: the 4x3 eyes' pupils move down and diagonally down. Their pupils already sit at the top, so up equals level.
+    - Frames are `look_up_left` ... `look_down_right` (`ui.GAZE_FRAMES`). A missing one falls back to the same column level, then idle.
+  - `ui.gaze_toward()` picks the nearest of 8 directions (a 0.38 dead zone on each axis), or straight ahead when the cursor is within 0.6 of a mascot width.
+    - `Sprite.gaze` overrides the random glances while IDLE, for `GAZE_S` = 5 s after the cursor last moved (`QCursor.pos()` polled each tick: the window and the notch). Hover still means "listen".
+    - The orb's core leans up to 0.2 R towards the cursor (`orb.paint(look=)`).
+  - Tray > Restart NOVA: `bridge.restart_requested` calls the same `restart()` as the settings' Restart button.
+    - It now passes `--window normal|max|full` when NOVA's window is open, and the new process reopens it that way.
+- **Left:** live checks of phases 2-4, then polish:
+  - instant local commands ("pause", "volume up") without Claude, for speed.
+
+### Phase 4 results (reminders and notes)
+- **Storage:** `nova/memory.py`, in `data/reminders.json` and `data/notes.json` (gitignored).
+  - Writes are atomic (temp file plus `os.replace`).
+  - An unreadable file is renamed `*.unreadable-<time>.json`, not overwritten.
+  - The tools can only reach those two files.
+- **Reminders:**
+  - `add_reminder(text, when, repeat)`: Claude gives a local ISO time, worked out from the clock in each message (now with seconds, so "in N minutes" is exact). Times must be in the future and at most a year ahead. Repeats are none, daily, weekdays or weekly, keeping the wall-clock time.
+  - `list_reminders` and `cancel_reminder` (by number, words or "all").
+  - A scheduler thread wakes at the next due time (at least every 60 s).
+  - A due reminder rings through the same alert path as timers, with status "Reminder".
+  - Reminders missed while NOVA was off are announced at startup ("You missed a reminder from …"); a repeating one jumps to its next future time.
+- **Notes:**
+  - `add_note(text, list)`, `list_notes`, `search_notes`, `delete_note` and `clear_list`.
+  - Lists are named ("shopping list" is stored as "shopping").
+  - Deleting is soft: the bin keeps notes for 30 days and empties itself on load.
+  - Clearing every note at once isn't possible by voice, only per list.
+- **Notch and tray:**
+  - When NOVA is idle or muted, the hover card shows "Next: pasta timer 3:12 · call Mum, 5:00 PM".
+  - NOVA settings has the Timers, Reminders and Notes pages: add, edit, delete, and the bin with restore. They refresh while open.
+- **Tests** (temporary data folders, never the real `data/`):
+  - **Unit tests:** missed reminders at start, firing, repeats (Friday 8:00 on weekdays goes to Monday), bad times, persistence, a corrupt file, the bin.
+  - **Haiku:**
+    - Requests handled: "in one minute", "at 9" (it picked 9 AM at 1 AM), a weekday repeat, list, cancel, a wifi-password note and recall, and a shopping list.
+    - "Delete all my notes" was refused, with the per-list option explained.
+  - **Simulated-room voice test:** set a reminder, add to and read back a list; the reminder rang after the conversation.
 
 ### Phase 3 results (PC control)
 - The user asked that it be secure and that it never delete important items or do anything that could break the PC. So it's a fixed list of harmless actions with checked inputs, and nothing else.
@@ -37,6 +134,12 @@ Status (2026-11-14):
     - Launching runs `explorer.exe shell:AppsFolder\<stored AppID>`, without a shell.
     - Matching is fuzzy and uses aliases.
     - `BLOCKED_APPS` (shells, admin and system tools, uninstallers, installers, reset and recovery) is enforced both in the window and at launch.
+  - **Spotify (`play_spotify`, `spotify_now_playing`), 2026-11-14,** at the user's request ("run spotify and search for a song"):
+    - Opening a `spotify:track:` URI only shows the track in Spotify 1.309; it doesn't play. Instead, the Spotify app ships an official CLI, `spotify_cli.exe` (an app alias in `%LOCALAPPDATA%\Microsoft\WindowsApps`), that searches, plays and reads now-playing through the logged-in desktop app: no API key, ~0.3-0.7 s per call.
+    - NOVA runs only `status`, `open`, `me`, `search`, `library list`, `play <uri>` and `now-playing` (`SPOTIFY_COMMANDS`, checked on every call), with list arguments and no shell. The CLI's playlist, library, queue, device, Jam and upload commands are never used.
+    - Claude never supplies a URI: it gives a query (cleaned: printable, one line, ≤ 100 characters, leading dashes removed so it can't be a flag) and a kind (track, album, artist, playlist, liked). NOVA plays the first result of Spotify's own search, or the user's own playlist when the name matches, after checking the URI's shape. Liked Songs is `spotify:user:<username>:collection`.
+    - It works only while Spotify is allowed under Apps. If Spotify isn't running, NOVA starts it (`open`) and waits up to 25 s (not live-tested yet: the user's Spotify was open).
+    - Tested: with `play` faked (searches and the library real), Claude picked the right kind for a song, an artist, "my focus playlist", liked songs and "what song is this?", 3-5 s to the first words. Hostile queries ("--help", shell characters) were only searched as text.
 - **Not possible, by design:** deleting, moving or editing files; running commands; installing or uninstalling; changing settings other than the volume; closing apps; power actions. The system prompt tells Claude to say so. Tested: "delete my Downloads folder", "shut down", "run ipconfig" and "close all my apps" were all refused without a tool call.
 - **Timer alerts:** they ring after a chime, by voice and in the notch (ALERT state, status "Timer").
   - If NOVA is idle or muted, the main loop checks for alerts every 0.5 s.
@@ -111,6 +214,7 @@ mic ─► wake word (Vosk, offline) ─► record question ─► Whisper ─�
                                                      └─ NOVA tools (local MCP server)
                                                           ├─ open_app(name)      approved apps only
                                                           ├─ timers, volume, media keys
+                                                          ├─ Spotify             search + play only
                                                           └─ reminders / notes   stored locally
                                                                      │
                                    notch UI  ◄─── status + text ─────┤
@@ -118,7 +222,7 @@ mic ─► wake word (Vosk, offline) ─► record question ─► Whisper ─�
 ```
 
 ### Safety model
-- Claude gets **only** WebSearch and the NOVA tools (weather, news, media keys, volume, timers, open allowed apps). Never Bash, PowerShell or file tools. Anything that would prompt for permission is refused (`--permission-prompts none`).
+- Claude gets **only** WebSearch and the NOVA tools (weather, news, media keys, volume, timers, open allowed apps, Spotify search and play, reminders and notes in NOVA's own data folder). Never Bash, PowerShell or file tools. Anything that would prompt for permission is refused (`--permission-prompts none`).
 - Every NOVA tool validates its input. `open_app` only launches apps the user has switched on in settings.
 - The mic is ignored while NOVA speaks, plus ~400 ms afterwards, so it can't wake itself.
 

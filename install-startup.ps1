@@ -17,5 +17,6 @@ $s.TargetPath = Join-Path $PSScriptRoot ".venv\Scripts\pythonw.exe"
 $s.Arguments = "-m nova"
 $s.WorkingDirectory = $PSScriptRoot
 $s.Description = "NOVA voice assistant"
+$s.IconLocation = (Join-Path $PSScriptRoot "assets\nova.ico") + ",0"
 $s.Save()
 Write-Host "NOVA will start when you sign in. Shortcut: $link"

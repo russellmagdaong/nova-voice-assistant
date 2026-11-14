@@ -11,3 +11,5 @@ logs/
 samples/
 tools/clips/
 state.json
+# Your reminders and notes
+data/

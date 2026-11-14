@@ -3,8 +3,10 @@
 - media keys: play/pause, next, previous, stop
 - volume: get, set, up, down, mute, unmute
 - timers: set, list, cancel (they ring through NOVA: chime, voice and the notch)
-- open an app the user has allowed (tray > Apps NOVA can open), through Explorer, exactly like
+- open an app the user has allowed (NOVA settings > Apps), through Explorer, exactly like
   clicking it in Start
+- Spotify, once it's allowed: play a song, album, artist, playlist or Liked Songs, and say what's
+  playing (Spotify's own command-line tool; it never changes playlists or the library)
 
 What it can't do, by design: delete, move or edit files; run commands; install or remove software;
 change settings other than the volume; close apps; shut down, restart, sleep or sign out. Every
@@ -217,6 +219,19 @@ class Timers:
         log.info("timers cancelled: %s", gone)
         return f"Cancelled {len(gone)} timer{'s' if len(gone) != 1 else ''}."
 
+    def snapshot(self) -> list[dict]:
+        """Running timers, soonest first: {id, name, seconds, left} (for the settings window)."""
+        now = time.monotonic()
+        with self._lock:
+            items = sorted(self._items.items(), key=lambda kv: kv[1]["ends"])
+        return [{"id": tid, "name": it["label"] or f"{spoken_duration(it['seconds'], adjective=True)} timer",
+                 "seconds": it["seconds"], "left": max(0.0, it["ends"] - now)} for tid, it in items]
+
+    def soonest(self) -> dict | None:
+        with self._lock:
+            items = sorted(self._items.values(), key=lambda it: it["ends"])
+        return dict(items[0]) if items else None
+
     def cancel_all(self):
         with self._lock:
             for it in self._items.values():
@@ -293,12 +308,12 @@ class Apps:
     def open(self, name: str) -> str:
         apps = self._list()
         if not apps:
-            return ("No apps are allowed yet. The user can allow apps from NOVA's tray menu: "
-                    "Apps NOVA can open.")
+            return ("No apps are allowed yet. The user can allow apps in NOVA settings: "
+                    "the Apps page (tray icon > Settings).")
         app = find_app(name, apps)
         if app is None:
             return (f"{name!r} isn't on the allowed list ({', '.join(a['name'] for a in apps)}). The user can "
-                    "allow more apps from NOVA's tray menu: Apps NOVA can open.")
+                    "allow more apps in NOVA settings, on the Apps page.")
         app_id = app["id"]
         if any(c in app_id for c in '"\r\n'):           # (IDs come from Get-StartApps; just in case)
             raise ValueError("invalid app id")
@@ -310,14 +325,171 @@ class Apps:
     def list(self) -> str:
         apps = self._list()
         return ("Apps NOVA may open: " + ", ".join(a["name"] for a in apps) + ".") if apps else \
-            "No apps are allowed yet (tray menu: Apps NOVA can open)."
+            "No apps are allowed yet (NOVA settings > Apps)."
+
+
+# ---- Spotify ---------------------------------------------------------------------------------------
+# Through spotify_cli, the command-line tool that comes with the Spotify desktop app: it searches and
+# plays through the account that's logged in there, so there's no API key. Only a fixed, read-or-play
+# set of its commands is ever run (below); the ones that change playlists, the library, the queue or
+# devices are never used. NOVA only plays URIs that Spotify's own search or library returned, after
+# checking their shape, and only while Spotify is allowed under NOVA settings > Apps.
+SPOTIFY_COMMANDS = {("status",), ("open",), ("me",), ("search",), ("library", "list"), ("play",), ("now-playing",)}
+SPOTIFY_KINDS = ("track", "album", "artist", "playlist", "liked")
+_SPOTIFY_URI = re.compile(r"spotify:(track|album|artist|playlist):[A-Za-z0-9]{22}")
+_SPOTIFY_USERNAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def find_spotify_cli() -> str | None:
+    import os
+    import shutil
+    local, roaming = os.environ.get("LOCALAPPDATA", ""), os.environ.get("APPDATA", "")
+    for c in (shutil.which("spotify_cli"),                                   # (Microsoft Store app: an alias)
+              os.path.join(local, "Microsoft", "WindowsApps", "spotify_cli.exe"),
+              os.path.join(roaming, "Spotify", "spotify_cli.exe")):          # (installer from spotify.com)
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
+def _clean_query(text: str) -> str:
+    """What to search for: printable, one line, at most 100 characters, and never read as a flag."""
+    text = " ".join("".join(ch for ch in (text or "") if ch.isprintable()).split())
+    return text.lstrip("-–— ")[:100].strip()
+
+
+class Spotify:
+    def __init__(self, allowed: Callable[[], list[dict]], run: Callable[[list[str]], str] | None = None,
+                 start_timeout: float = 25.0):
+        self.allowed = allowed                           # the allowed apps (NOVA settings > Apps)
+        self._run = run or self._run_cli                 # (tests pass a fake)
+        self.start_timeout = start_timeout
+
+    @staticmethod
+    def _run_cli(args: list[str]) -> str:
+        exe = find_spotify_cli()
+        if exe is None:
+            raise RuntimeError("Spotify's command-line tool (spotify_cli) wasn't found: the user may need to "
+                               "install or update the Spotify app.")
+        out = subprocess.run([exe, *args], capture_output=True, timeout=20, creationflags=CREATE_NO_WINDOW)
+        text = out.stdout.decode("utf-8", "replace").strip()
+        if out.returncode != 0:
+            err = (out.stderr.decode("utf-8", "replace").strip() or text).splitlines()
+            raise RuntimeError(f"Spotify: {err[0] if err else 'error ' + str(out.returncode)}")
+        return text
+
+    def _cli(self, *args: str):
+        """Run one of the allowed spotify_cli commands; its JSON output."""
+        if args[:1] not in SPOTIFY_COMMANDS and args[:2] not in SPOTIFY_COMMANDS:
+            raise ValueError(f"not an allowed Spotify command: {args[:2]}")
+        text = self._run([*args, "--format", "json"])
+        try:
+            return json.loads(text) if text else {}
+        except json.JSONDecodeError:
+            return {"text": text}
+
+    def _gate(self) -> str | None:
+        allowed = [a for a in self.allowed() if a.get("name") and not is_blocked(a["name"])]
+        if not find_app("spotify", allowed):
+            return ("Spotify isn't allowed yet. The user can allow it in NOVA settings, on the Apps page "
+                    "(tray icon > Settings).")
+        return None
+
+    def _ready(self) -> str | None:
+        """Spotify running and logged in (starting it if needed); None when ready, else why not."""
+        s = self._cli("status")
+        if not s.get("running"):
+            log.info("starting Spotify")
+            self._cli("open")
+            end = time.monotonic() + self.start_timeout
+            while time.monotonic() < end and not s.get("running"):
+                time.sleep(0.5)
+                s = self._cli("status")
+            if not s.get("running"):
+                return "Spotify didn't start. The user could open it and try again."
+            time.sleep(1.5)                              # (let it finish loading before playing)
+        if not s.get("logged_in"):
+            return "Spotify is open but not logged in."
+        return None
+
+    def _play(self, uri: str, what: str) -> str:
+        what = what.rstrip(". ")                         # (a playlist called "focus.")
+        self._cli("play", uri)
+        log.info("spotify: playing %s (%s)", what, uri)
+        for _ in range(6):                               # confirm it started (usually at once)
+            now = self._cli("now-playing").get("currently_playing") or {}
+            if now.get("is_playing"):
+                return f"Playing {what}."
+            time.sleep(0.5)
+        return f"Asked Spotify to play {what}, but it doesn't seem to have started."
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        return " ".join(re.sub(r"[^\w ]", " ", (s or "").lower()).split())
+
+    def _own_playlist(self, query: str) -> dict | None:
+        items = self._cli("library", "list", "--type", "playlist", "--limit", "500").get("items") or []
+        want = self._norm(re.sub(r"\b(my|the|playlist)\b", " ", query, flags=re.I))
+        if not want:
+            return None
+        names = [(self._norm(p.get("name", "")), p) for p in items if _SPOTIFY_URI.fullmatch(p.get("uri", ""))]
+        for n, p in names:
+            if n == want:
+                return p
+        for n, p in names:
+            if n and (n.startswith(want) or want in n.split() or (len(want) > 3 and want in n)):
+                return p
+        close = difflib.get_close_matches(want, [n for n, _ in names], n=1, cutoff=0.75)
+        return next(p for n, p in names if n == close[0]) if close else None
+
+    def play(self, query: str = "", kind: str = "track") -> str:
+        if kind not in SPOTIFY_KINDS:
+            raise ValueError(f"kind must be one of {', '.join(SPOTIFY_KINDS)}")
+        if why := self._gate():
+            return why
+        q = _clean_query(query)
+        if not q and kind != "liked":
+            raise ValueError("say what to play")
+        if why := self._ready():
+            return why
+        if kind == "liked":
+            user = str(self._cli("me").get("username", ""))
+            if not _SPOTIFY_USERNAME.fullmatch(user):
+                return "Couldn't find the user's Liked Songs."
+            return self._play(f"spotify:user:{user}:collection", "your Liked Songs")
+        if kind == "playlist" and (own := self._own_playlist(q)):
+            return self._play(own["uri"], f"your playlist {own.get('name', '')}".strip())
+        found = self._cli("search", q, "--type", kind, "--limit", "1")
+        hits = [h for h in (found.get(kind + "s") or []) if _SPOTIFY_URI.fullmatch(h.get("uri", ""))]
+        if not hits:
+            return f"Spotify found no {kind} for {q!r}."
+        h = hits[0]
+        by = ", ".join(h.get("artists") or [])
+        what = h.get("name", q) + (f" by {by}" if by and kind in ("track", "album") else "")
+        if kind == "playlist":
+            what = f"the playlist {what}"
+        return self._play(h["uri"], what)
+
+    def now_playing(self) -> str:
+        if why := self._gate():
+            return why
+        if not self._cli("status").get("running"):
+            return "Spotify isn't open."
+        now = self._cli("now-playing").get("currently_playing") or {}
+        if not now.get("description"):
+            return "Nothing is playing on Spotify."
+        ctx = f" (from {now['context_description']})" if now.get("context_description") else ""
+        state_ = "Playing" if now.get("is_playing") else "Paused"
+        return f"{state_} on Spotify: {now['description'].replace(' — ', ' by ', 1)}{ctx}."
 
 
 # ---- the tools, for the MCP host ------------------------------------------------------------------
 class PCTools:
-    def __init__(self, on_timer_done: Callable[[str], None], allowed_apps: Callable[[], list[dict]]):
+    def __init__(self, on_timer_done: Callable[[str], None], allowed_apps: Callable[[], list[dict]],
+                 spotify: Spotify | None = None):
         self.timers = Timers(on_timer_done)
         self.apps = Apps(allowed_apps)
+        self.spotify = spotify or Spotify(allowed_apps)
 
     def registry(self) -> tuple[list[dict], dict[str, Callable]]:
         tools = [
@@ -346,8 +518,20 @@ class PCTools:
              "inputSchema": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}},
             {"name": "list_apps", "description": "The apps the user has allowed NOVA to open.",
              "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "play_spotify", "description": "Play something on Spotify (starts the app if needed): a "
+                                                    "song, album, artist or playlist found by Spotify's own "
+                                                    "search, or the user's Liked Songs. For playlists the "
+                                                    "user's own come first. No web search needed.",
+             "inputSchema": {"type": "object", "required": ["kind"], "properties": {
+                 "query": {"type": "string", "maxLength": 100,
+                           "description": "What to play, e.g. 'blinding lights the weeknd' (song name plus "
+                                          "artist when known). Empty for liked."},
+                 "kind": {"type": "string", "enum": list(SPOTIFY_KINDS)}}}},
+            {"name": "spotify_now_playing", "description": "The song playing on Spotify right now.",
+             "inputSchema": {"type": "object", "properties": {}}},
         ]
         funcs = {"media_control": media_control, "volume": volume, "set_timer": self.timers.set,
                  "list_timers": self.timers.list, "cancel_timer": self.timers.cancel,
-                 "open_app": self.apps.open, "list_apps": self.apps.list}
+                 "open_app": self.apps.open, "list_apps": self.apps.list,
+                 "play_spotify": self.spotify.play, "spotify_now_playing": self.spotify.now_playing}
         return tools, funcs

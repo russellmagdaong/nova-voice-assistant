@@ -142,3 +142,18 @@ ICON_ASLEEP = [        # standby: dim screen, closed eyes, antennae off
 def icon_image(muted: bool = False) -> QImage:
     """16x16 tray icon with a white outline (grey and in standby when muted)."""
     return outlined_icon(ICON_ASLEEP if muted else ICON, PALETTE, None, dx=1, dy=2)   # no white outline
+
+
+# ---- Looking around: the eyes follow the cursor (NOVA's window and the notch). The eye bars
+# move about the screen; looking down, the mouth and blush move down with them.
+_BLUSH_DOWN = {(7, 8): "P", (15, 8): "P"}
+_GAZE = {
+    "look_up":         {**BLUSH, **_bar(8, 4, 6), **_bar(14, 4, 6), (11, 7): "E"},
+    "look_up_left":    {**BLUSH, **_bar(7, 4, 6), **_bar(13, 4, 6), (11, 7): "E"},
+    "look_up_right":   {**BLUSH, **_bar(9, 4, 6), **_bar(15, 4, 6), (11, 7): "E"},
+    "look_down":       {**_BLUSH_DOWN, **_bar(8, 6, 8), **_bar(14, 6, 8), (11, 9): "E"},
+    "look_down_left":  {**_BLUSH_DOWN, **_bar(7, 6, 8), **_bar(13, 6, 8), (11, 9): "E"},
+    "look_down_right": {**_BLUSH_DOWN, **_bar(9, 6, 8), **_bar(15, 6, 8), (11, 9): "E"},
+}
+FACES.update(_GAZE)
+FRAMES.update({name: name for name in _GAZE})
